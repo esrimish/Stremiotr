@@ -12,10 +12,16 @@ app.get('/manifest.json', (req, res) => {
         version: "1.0.0",
         name: "Render Altyazi Servisi",
         description: "HTTPS Destekli Altyazi",
+        logo: `https://${req.get('host')}/logo.png`, // Simgeyi buradan çekecek
         resources: ["subtitles"],
         types: ["movie", "series"],
         idPrefixes: ["tt"]
     });
+});
+
+// Resim dosyasını dışarıya servis etmek için bu satırı da ekle:
+app.get('/logo.png', (req, res) => {
+    res.sendFile(path.join(__dirname, 'logo.png'));
 });
 
 app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
