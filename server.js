@@ -4,32 +4,21 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
-// Bu satırı server.js'in üst kısımlarına (path tanımlamasından sonra) ekle
-app.use(express.static(__dirname)); 
-
-// Logo isteği geldiğinde dosyayı gönder
-app.get('/logo.png', (req, res) => {
-    res.sendFile(path.join(__dirname, 'logo.png'));
-});
 app.use(cors());
-// 1. Ana sayfaya girince düzgün bir HTML görünsün (Kısayol için gerekli)
+// Statik dosyaları (logo.png gibi) dışarı açar
+app.use(express.static(__dirname));
+
+// --- 1. ANA SAYFA (TELEFON KISAYOLU İÇİN) ---
 app.get('/', (req, res) => {
-    res.send(`
-        <html>
-   app.get('/', (req, res) => {
+    const host = req.get('host');
     res.send(`
         <html>
             <head>
                 <title>Stremio Altyazi</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                
-                <link rel="apple-touch-icon" href="https://${req.get('host')}/logo.png">
-                <link rel="icon" type="image/png" href="https://${req.get('host')}/logo.png">
-                <link rel="shortcut icon" href="https://${req.get('host')}/logo.png">
-                
+                <link rel="apple-touch-icon" href="https://${host}/logo.png">
+                <link rel="icon" type="image/png" href="https://${host}/logo.png">
                 <meta name="theme-color" content="#111111">
-                <meta name="mobile-web-app-capable" content="yes">
-
                 <style>
                     body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
                     img { width: 120px; border-radius: 20px; margin-bottom: 20px; border: 2px solid #333; }
@@ -39,71 +28,46 @@ app.get('/', (req, res) => {
             <body>
                 <img src="/logo.png" alt="Logo">
                 <h1>Altyazi Servisi <span class="status">AKTIF</span></h1>
-                <p>TV bağlantısı hazır.</p>
+                <p>TV bağlantısı hazır. Sunucu uyanık.</p>
             </body>
         </html>
     `);
 });
-            <body>
-                <img src="/logo.png" alt="Logo">
-                <h1>Altyazi Servisi Aktif</h1>
-                <p>Sunucu uyanık ve hazır!</p>
-            </body>
-        </html>
-    `);
-});
+
+// --- 2. STREMIO MANIFEST ---
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: "com.render.altyazi",
-        version: "1.0.0",
-        name: "Esrimish Manual Subs",
-        description: "HTTPS Destekli Altyazi",
-        logo: `https://${req.get('host')}/logo.png`, // Simgeyi buradan çekecek
+        version: "1.0.1",
+        name: "Render Altyazi Servisi",
+        description: "HTTPS Destekli Kişisel Altyazi",
+        logo: `https://${req.get('host')}/logo.png`,
         resources: ["subtitles"],
         types: ["movie", "series"],
         idPrefixes: ["tt"]
     });
 });
 
-// Resim dosyasını dışarıya servis etmek için bu satırı da ekle:
-app.get('/logo.png', (req, res) => {
-    res.sendFile(path.join(__dirname, 'logo.png'));
-});
-
+// --- 3. ALTYAZI LİSTELEME ---
 app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
     const imdbId = req.params.id.split(':')[0];
-    
-    // URL'nin başına HTTPS'yi manuel ekleyelim
-    const subUrl = `https://${req.get('host')}/download/${imdbId}.srt`;
-    
-    console.log("🔗 Altyazı Linki Oluşturuldu:", subUrl);
-
     res.json({
         subtitles: [{
             id: "local-sub",
-            url: subUrl,
+            url: `https://${req.get('host')}/download/${imdbId}.srt`,
             lang: "Turkish"
         }]
     });
 });
 
+// --- 4. ALTYAZI İNDİRME ---
 app.get('/download/:filename', (req, res) => {
-    // __dirname ile subs klasörüne tam yol çiziyoruz
     const filePath = path.join(__dirname, 'subs', req.params.filename);
-    
-    console.log("🔍 Aranan Dosya Yolu:", filePath);
-
     if (fs.existsSync(filePath)) {
-        console.log("✅ Dosya bulundu, gönderiliyor.");
         res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
         res.download(filePath);
     } else {
-        console.log("❌ Dosya klasörde yok!");
-        // Klasörün içindekileri logla ki neyi yanlış yazdığını görelim
-        const files = fs.readdirSync(path.join(__dirname, 'subs'));
-        console.log("📂 Subs klasöründeki dosyalar:", files);
-        
-        res.status(404).send(`Altyazi bulunamadi. Aranan: ${req.params.filename}`);
+        res.status(404).send("Altyazi bulunamadi.");
     }
 });
 
@@ -111,4 +75,3 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
-
