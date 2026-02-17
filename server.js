@@ -20,10 +20,16 @@ app.get('/manifest.json', (req, res) => {
 
 app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
     const imdbId = req.params.id.split(':')[0];
+    
+    // URL'nin başına HTTPS'yi manuel ekleyelim
+    const subUrl = `https://${req.get('host')}/download/${imdbId}.srt`;
+    
+    console.log("🔗 Altyazı Linki Oluşturuldu:", subUrl);
+
     res.json({
         subtitles: [{
             id: "local-sub",
-            url: `https://${req.get('host')}/download/${imdbId}.srt`,
+            url: subUrl,
             lang: "Turkish"
         }]
     });
