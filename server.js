@@ -91,8 +91,8 @@ app.get('/manifest.json', (req, res) => {
     res.json({
         id: "com.render.akillialtyazi",
         version: "3.5.0",
-        name: "Akıllı Altyazi",
-        description: "Haikyuu ve Thunderbolts Fix + Mobil Uygulama Desteği",
+        name: "Esrimish Manual Subs",
+        description: "Akilli secme ozellikli nihai surum",
         logo: `https://${req.get('host')}/logo.png`,
         resources: ["subtitles"],
         types: ["movie", "series", "anime"],
