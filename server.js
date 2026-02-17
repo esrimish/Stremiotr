@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
     res.send(`<html><body style="background:#111;color:white;text-align:center;padding:50px;">
         <img src="/logo.png" style="width:120px;border-radius:20px;">
         <h1>Altyazi Servisi <span style="color:#00ff00">AKTIF</span></h1>
-        <p>Saf ID (Sadece Rakam) + İsim Eşleme Devrede.</p>
+        <p>Klasör Kilidi ve Sezon Doğrulama Sistemi Aktif.</p>
     </body></html>`);
 });
 
@@ -22,9 +22,9 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: "com.render.akillialtyazi",
-        version: "2.7.0",
+        version: "2.8.0",
         name: "Akıllı Altyazi Servisi",
-        description: "Saf ID ve İsim Tabanlı Arama",
+        description: "Sezon Klasörü Kilitli Arama",
         logo: `https://${req.get('host')}/logo.png`,
         resources: ["subtitles"],
         types: ["movie", "series", "anime"],
@@ -38,8 +38,8 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const [rawId, season, episode] = id.split(':');
     const subsDir = path.join(__dirname, 'subs');
     
-    // Sadece rakamları al (Örn: tt0816692 -> 0816692 veya kitsu:11248 -> 11248)
     const pureId = rawId.replace(/\D/g, ''); 
+    const currentSeason = season ? parseInt(season) : null;
     
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
 
@@ -54,7 +54,8 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const s_pad = season ? season.padStart(2, '0') : "";
     const e_pad = episode ? episode.padStart(2, '0') : "";
 
-    function searchFiles(dir, relativePath = "") {
+    // pathSeason: O an taranan klasörün hangi sezona ait olduğu bilgisi
+    function searchFiles(dir, relativePath = "", pathSeason = null) {
         const items = fs.readdirSync(dir, { withFileTypes: true });
         
         for (const item of items) {
@@ -63,38 +64,40 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
             const lowerName = item.name.toLowerCase();
 
             if (item.isDirectory()) {
-                // --- SEZON KONTROLÜ (Dizi/Anime ise her şeyden önce buna bak) ---
-                if (season && (lowerName.includes('sezon') || lowerName.includes('season') || /s\d+/.test(lowerName))) {
-                    const foundSeason = lowerName.match(/\d+/);
-                    if (foundSeason && parseInt(foundSeason[0]) !== parseInt(season)) {
-                        continue; // Yanlış sezon klasörüyse anında pas geç
+                let nextPathSeason = pathSeason;
+
+                // Eğer klasör adı sezon içeriyorsa (Sezon 1, S02 vb.)
+                if (lowerName.includes('sezon') || lowerName.includes('season') || /s\d+/.test(lowerName)) {
+                    const found = lowerName.match(/\d+/);
+                    if (found) {
+                        nextPathSeason = parseInt(found[0]);
                     }
                 }
 
-                // --- HİBRİT KLASÖR EŞLEŞTİRME ---
-                const isIdMatch = pureId && lowerName.includes(pureId);
-                const isNameMatch = movieName && lowerName.includes(movieName);
-
-                // Eğer en üst dizindeysek ve ne ID ne isim tutuyorsa bu ana klasörü atla (Hız kazandırır)
-                if (relativePath === "" && !isIdMatch && !isNameMatch) {
-                   // return; // Bazı durumlarda riskli olabilir, o yüzden sadece continue mantığıyla devam edelim
+                // KLASÖR KİLİDİ: Eğer bir sezon klasöründeysek ve bizim sezonumuz değilse İÇERİ GİRME
+                if (currentSeason && nextPathSeason !== null && nextPathSeason !== currentSeason) {
+                    continue; 
                 }
 
-                searchFiles(fullPath, currentRelPath);
+                searchFiles(fullPath, currentRelPath, nextPathSeason);
             } else if (item.name.endsWith('.srt')) {
-                // --- BÖLÜM VE DOSYA ADI KONTROLÜ ---
+                // EĞER ŞU AN YANLIŞ SEZON YOLUNDAYSAK DOSYAYI EKLEME
+                if (currentSeason && pathSeason !== null && pathSeason !== currentSeason) {
+                    continue;
+                }
+
                 if (type !== 'movie') {
+                    // BÖLÜM KONTROLÜ
                     const epPatterns = [`e${e_pad}`, `x${e_pad}`, `ep${e_pad}`, `-${e_pad}`, `_${e_pad}`, ` ${e_pad}`, ` ${episode} `];
                     const isCorrectEp = epPatterns.some(p => lowerName.includes(p));
                     
-                    // Dosya isminde sezon bilgisi varsa (s01e23 gibi) kontrol et
-                    const hasWrongSeason = season && lowerName.includes('s0') && !lowerName.includes(`s${s_pad}`);
+                    // Dosya adında çelişkili sezon bilgisi varsa (Dosya s02e01 ama biz s01 istiyoruz)
+                    const hasWrongSeasonInfo = season && lowerName.includes('s0') && !lowerName.includes(`s${s_pad}`);
 
-                    if (isCorrectEp && !hasWrongSeason) {
+                    if (isCorrectEp && !hasWrongSeasonInfo) {
                         addSubtitle(item.name, currentRelPath);
                     }
                 } else {
-                    // FİLM: Klasör süzgecinden geçtiği için .srt dosyalarını ekle
                     addSubtitle(item.name, currentRelPath);
                 }
             }
@@ -127,4 +130,4 @@ app.get('/download/:path*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Saf ID Modu Aktif: ${PORT}`));
+app.listen(PORT, () => console.log(`Katı Sezon Filtresi Aktif: ${PORT}`));
