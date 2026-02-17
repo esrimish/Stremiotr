@@ -36,7 +36,7 @@ app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
 });
 
 app.get('/download/:filename', (req, res) => {
-    const filePath = path.join(__dirname, 'subs', req.params.filename);
+    const filePath = path.resolve(__dirname, 'subs', req.params.filename);
     
     if (fs.existsSync(filePath)) {
         // Altyazı dosyasının içeriğini oku
