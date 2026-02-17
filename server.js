@@ -87,7 +87,29 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     // Sezon ve Bölüm formatlarını hazırla (Örn: S01, E01)
     const s_pad = season ? season.padStart(2, '0') : "";
     const e_pad = episode ? episode.padStart(2, '0') : "";
+    function filterAndAdd(fileList, relativePath) {
+        fileList.forEach(f => {
+            const fileName = f.toLowerCase();
+            
+            // BÖLÜM KONTROLÜ (Çok Katı)
+            // " 01 ", "-01", "e01", "x01" gibi kalıpları arar
+            const patterns = [`e${e_pad}`, `x${e_pad}`, `-${e_pad}`, ` ${e_pad} `, ` ${episode} `, `ep${e_pad}`, `_${e_pad}`];
+            const isCorrectEpisode = patterns.some(p => fileName.includes(p));
 
+            // SEZON ÇAKIŞMA KONTROLÜ
+            // Eğer dosya adında S02 yazıyorsa ama biz S01 istiyorsak alma
+            const hasWrongSeason = season && fileName.includes('s0') && !fileName.includes(`s${s_pad}`);
+
+            if (isCorrectEpisode && !hasWrongSeason) {
+                matchedOptions.push({
+                    id: `match-${f}`,
+                    url: `https://${req.get('host')}/download/${encodeURIComponent(relativePath + '/' + f)}`,
+                    lang: "Turkish",
+                    label: `✅ ${f.replace('.srt', '')}`
+                });
+            }
+        });
+    }
     // 2. KLASÖR TARAMASI
     for (const entry of entries) {
         if (entry.isDirectory()) {
@@ -123,36 +145,13 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     }
 
     // Dosyayı sadece İSTEDİĞİMİZ BÖLÜM ise listeye ekleyen fonksiyon
-    function filterAndAdd(fileList, relativePath) {
-        fileList.forEach(f => {
-            const fileName = f.toLowerCase();
-            
-            // BÖLÜM KONTROLÜ (Çok Katı)
-            // " 01 ", "-01", "e01", "x01" gibi kalıpları arar
-            const patterns = [`e${e_pad}`, `x${e_pad}`, `-${e_pad}`, ` ${e_pad} `, ` ${episode} `, `ep${e_pad}`, `_${e_pad}`];
-            const isCorrectEpisode = patterns.some(p => fileName.includes(p));
-
-            // SEZON ÇAKIŞMA KONTROLÜ
-            // Eğer dosya adında S02 yazıyorsa ama biz S01 istiyorsak alma
-            const hasWrongSeason = season && fileName.includes('s0') && !fileName.includes(`s${s_pad}`);
-
-            if (isCorrectEpisode && !hasWrongSeason) {
-                matchedOptions.push({
-                    id: `match-${f}`,
-                    url: `https://${req.get('host')}/download/${encodeURIComponent(relativePath + '/' + f)}`,
-                    lang: "Turkish",
-                    label: `✅ ${f.replace('.srt', '')}`
-                });
-            }
-        });
-    }
+    
 
     // 3. SONUÇ
     res.json({ subtitles: matchedOptions });
-});
 // --- 4. ALTYAZI İNDİRME ---
-app.get('/download/:filename', (req, res) => {
-    const filePath = path.join(__dirname, 'subs', req.params.filename);
+app.get('/download/:filename*', (req, res) => {
+    const filePath = path.join(__dirname, 'subs', req.params[0], req.params.filename);
     if (fs.existsSync(filePath)) {
         res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
         res.download(filePath);
