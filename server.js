@@ -36,19 +36,22 @@ app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
 });
 
 app.get('/download/:filename', (req, res) => {
-    const filePath = path.resolve(__dirname, 'subs', req.params.filename);
+    // __dirname ile subs klasörüne tam yol çiziyoruz
+    const filePath = path.join(__dirname, 'subs', req.params.filename);
     
-    if (fs.existsSync(filePath)) {
-        // Altyazı dosyasının içeriğini oku
-        let content = fs.readFileSync(filePath);
+    console.log("🔍 Aranan Dosya Yolu:", filePath);
 
-        // TV'ye bu dosyanın UTF-8 olduğunu ve altyazı formatında olduğunu söyle
+    if (fs.existsSync(filePath)) {
+        console.log("✅ Dosya bulundu, gönderiliyor.");
         res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename=${req.params.filename}`);
-        
-        res.send(content);
+        res.download(filePath);
     } else {
-        res.status(404).send("Altyazi bulunamadi.");
+        console.log("❌ Dosya klasörde yok!");
+        // Klasörün içindekileri logla ki neyi yanlış yazdığını görelim
+        const files = fs.readdirSync(path.join(__dirname, 'subs'));
+        console.log("📂 Subs klasöründeki dosyalar:", files);
+        
+        res.status(404).send(`Altyazi bulunamadi. Aranan: ${req.params.filename}`);
     }
 });
 
