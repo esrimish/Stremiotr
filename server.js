@@ -9,35 +9,39 @@ app.use(cors());
 app.use(express.static(__dirname));
 
 // --- 1. MOBİL UYUMLU ANA SAYFA (YÜKLE BUTONLU) ---
+// --- 1. ANA SAYFA GÜNCELLEME ---
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
     <html lang="tr">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <title>Altyazı Servisi</title>
         <link rel="manifest" href="/web-manifest.json">
+        <meta name="theme-color" content="#00d1b2">
         <style>
-            body { background: #0f0f0f; color: white; font-family: 'Segoe UI', sans-serif; text-align: center; padding: 40px 20px; }
-            .card { background: #1a1a1a; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 400px; margin: auto; }
-            img { width: 100px; border-radius: 20px; margin-bottom: 20px; border: 2px solid #00d1b2; }
-            h1 { font-size: 24px; margin-bottom: 10px; color: #00d1b2; }
-            p { color: #aaa; font-size: 14px; line-height: 1.6; }
-            .btn { background: #00d1b2; color: #fff; border: none; padding: 12px 25px; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 20px; width: 100%; transition: 0.3s; }
-            .btn:hover { background: #00b89c; }
-            code { display: block; background: #000; padding: 15px; border-radius: 8px; margin-top: 20px; font-size: 12px; color: #00d1b2; word-break: break-all; }
+            body { background: #0f0f0f; color: white; font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+            .card { background: #1a1a1a; padding: 40px 20px; border-radius: 30px; box-shadow: 0 15px 35px rgba(0,0,0,0.7); max-width: 350px; width: 100%; border: 1px solid #333; }
+            .logo-container { width: 120px; height: 120px; margin: 0 auto 20px; position: relative; }
+            img { width: 100%; height: 100%; object-fit: cover; border-radius: 25px; border: 3px solid #00d1b2; box-shadow: 0 0 15px rgba(0, 209, 178, 0.3); }
+            h1 { font-size: 26px; margin: 0 0 10px; color: #fff; font-weight: 800; }
+            p { color: #888; font-size: 15px; margin-bottom: 25px; }
+            .btn { background: #00d1b2; color: #000; border: none; padding: 15px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; transition: transform 0.2s; }
+            .btn:active { transform: scale(0.95); }
+            code { display: block; background: #000; padding: 15px; border-radius: 10px; margin-top: 20px; font-size: 11px; color: #00d1b2; border: 1px dashed #444; word-break: break-all; }
         </style>
     </head>
     <body>
         <div class="card">
-            <img src="/logo.png" alt="Logo">
+            <div class="logo-container">
+                <img src="/logo.png" alt="Logo">
+            </div>
             <h1>Altyazı Servisi</h1>
-            <p>Stremio için özel altyazı eklentiniz şu an aktif ve hazır.</p>
-            <button id="installBtn" class="btn" style="display:none;">Uygulama Olarak Yükle</button>
+            <p>Stremio eklentiniz aktif.</p>
+            <button id="installBtn" class="btn" style="display:none;">Uygulamayı Yükle</button>
             <code>https://${req.get('host')}/manifest.json</code>
         </div>
-
         <script>
             let deferredPrompt;
             window.addEventListener('beforeinstallprompt', (e) => {
@@ -45,14 +49,10 @@ app.get('/', (req, res) => {
                 deferredPrompt = e;
                 document.getElementById('installBtn').style.display = 'block';
             });
-
             document.getElementById('installBtn').addEventListener('click', () => {
                 if (deferredPrompt) {
                     deferredPrompt.prompt();
-                    deferredPrompt.userChoice.then((choice) => {
-                        if (choice.outcome === 'accepted') console.log('Yüklendi');
-                        deferredPrompt = null;
-                    });
+                    deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
                 }
             });
         </script>
@@ -61,7 +61,7 @@ app.get('/', (req, res) => {
     `);
 });
 
-// --- 2. TELEFON İÇİN WEB MANIFEST (PWA) ---
+// --- 2. WEB MANIFEST GÜNCELLEME (Tam Ekran İkon İçin) ---
 app.get('/web-manifest.json', (req, res) => {
     res.json({
         "name": "Altyazi Servisi",
@@ -71,12 +71,21 @@ app.get('/web-manifest.json', (req, res) => {
         "background_color": "#0f0f0f",
         "theme_color": "#00d1b2",
         "icons": [
-            { "src": "/logo.png", "sizes": "192x192", "type": "image/png" },
-            { "src": "/logo.png", "sizes": "512x512", "type": "image/png" }
+            {
+                "src": "/logo.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any" 
+            },
+            {
+                "src": "/logo.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable"
+            }
         ]
     });
 });
-
 // --- 3. STREMIO MANIFEST ---
 app.get('/manifest.json', (req, res) => {
     res.json({
