@@ -149,9 +149,13 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
 
     // 3. SONUÇ
     res.json({ subtitles: matchedOptions });
+    });
 // --- 4. ALTYAZI İNDİRME ---
-app.get('/download/:filename*', (req, res) => {
-    const filePath = path.join(__dirname, 'subs', req.params[0], req.params.filename);
+app.get('/download/:folder/:subfolder?/:file', (req, res) => {
+    const { folder, subfolder, file } = req.params;
+    const filePath = subfolder 
+        ? path.join(__dirname, 'subs', folder, subfolder, file) 
+        : path.join(__dirname, 'subs', folder, file);
     if (fs.existsSync(filePath)) {
         res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
         res.download(filePath);
