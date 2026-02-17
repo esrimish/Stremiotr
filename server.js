@@ -16,7 +16,6 @@ app.use(cors());
 app.get('/', (req, res) => {
     res.send(`
         <html>
-            // app.get('/') içindeki head kısmını şununla değiştir:
 <head>
     <title>Stremio Altyazi Servisi</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
