@@ -63,6 +63,7 @@ app.get('/manifest.json', (req, res) => {
 });
 
 // --- 3. AKILLI ALTYAZI LİSTELEME ---
+// --- 3. AKILLI ALTYAZI LİSTELEME (GELİŞMİŞ FİLTRELEME + YEDEK PLAN) ---
 app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
     const imdbId = req.params.id.split(':')[0];
     const extra = req.params.extra;
@@ -75,44 +76,46 @@ app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
     const urlParams = new URLSearchParams(extra.replace(".json", ""));
     const movieName = urlParams.get('name');
 
-    let bestMatch = null;
-    let highestScore = 0;
+    let matchedOptions = [];
 
     files.forEach(file => {
-        // Önce IMDb ID kontrolü (Varsa en garantisi budur)
+        // 1. IMDb ID kontrolü (En yüksek öncelik)
         if (file.includes(imdbId)) {
-            highestScore = 2; // ID eşleşmesine en yüksek puanı ver
-            bestMatch = file;
+            matchedOptions.push({
+                id: `id-${file}`,
+                url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
+                lang: "Turkish",
+                label: `🎯 TAM EŞLEŞME: ${file.replace('.srt', '')}`
+            });
         } else {
-            // ID yoksa isim puanlaması yap (Anime ve diğerleri için)
+            // 2. İsim puanlaması (Anime ve diğerleri için)
             const score = calculateMatchScore(movieName, file);
-            if (score > highestScore) {
-                highestScore = score;
-                bestMatch = file;
+            
+            // Hassasiyet: %40 ve üzeri benzerlik varsa listeye ekle
+            if (score >= 0.4) {
+                matchedOptions.push({
+                    id: `match-${file}`,
+                    url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
+                    lang: "Turkish",
+                    label: `⭐ %${Math.round(score * 100)} Uygun: ${file.replace('.srt', '')}`
+                });
             }
         }
     });
 
-    // Eğer bir eşleşme bulunduysa (ID ile veya %40+ isim benzerliği ile)
-    if (bestMatch && highestScore > 0.4) {
-        res.json({
-            subtitles: [{
-                id: `smart-${bestMatch}`,
-                url: `https://${req.get('host')}/download/${encodeURIComponent(bestMatch)}`,
-                lang: "Turkish",
-                label: bestMatch.replace('.srt', '')
-            }]
-        });
+    // SONUÇ DÖNDÜRME MANTIĞI:
+    if (matchedOptions.length > 0) {
+        // Eğer akıllı eşleşme bir şeyler bulduysa sadece onları göster
+        res.json({ subtitles: matchedOptions });
     } else {
-        // Hiçbir şey bulunamadıysa klasördeki tüm dosyaları listele (Yedek plan)
-        res.json({
-            subtitles: files.map(f => ({
-                id: f,
-                url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
-                lang: "Turkish",
-                label: f
-            }))
-        });
+        // HİÇBİR ŞEY BULUNAMAZSA: Klasördeki tüm dosyaları listele (Yedek Plan)
+        const allFiles = files.map(f => ({
+            id: `all-${f}`,
+            url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
+            lang: "Turkish",
+            label: `📂 Tüm Dosyalardan: ${f.replace('.srt', '')}`
+        }));
+        res.json({ subtitles: allFiles });
     }
 });
 
