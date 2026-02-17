@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
+// CORS ayarları Stremio'nun sunucuya erişmesi için hayati önem taşır
 app.use(cors());
 app.use(express.static(__dirname));
 
@@ -20,7 +21,7 @@ function calculateMatchScore(query, fileName) {
     return queryWords.length > 0 ? matches / queryWords.length : 0;
 }
 
-// --- 1. ANA SAYFA (Logo Kodları Korundu) ---
+// --- 1. ANA SAYFA ---
 app.get('/', (req, res) => {
     const host = req.get('host');
     res.send(`
@@ -28,9 +29,6 @@ app.get('/', (req, res) => {
             <head>
                 <link rel="manifest" href="/site.webmanifest">
                 <title>Stremio Altyazi</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <link rel="apple-touch-icon" href="https://${host}/logo.png">
-                <link rel="icon" type="image/png" href="https://${host}/logo.png">
                 <style>
                     body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
                     img { width: 120px; border-radius: 20px; margin-bottom: 20px; border: 2px solid #333; }
@@ -38,9 +36,9 @@ app.get('/', (req, res) => {
                 </style>
             </head>
             <body>
-                <img src="/logo.png" alt="Logo">
+                <img src="/logo.png" alt="Logo" onerror="this.style.display='none'">
                 <h1>Altyazi Servisi <span class="status">AKTIF</span></h1>
-                <p>TV bağlantısı hazır. Sunucu uyanık.</p>
+                <p>TV ve Mobil bağlantısı hazır. Sunucu çalışıyor.</p>
             </body>
         </html>
     `);
@@ -52,7 +50,7 @@ app.get('/manifest.json', (req, res) => {
         id: "com.render.akillialtyazi",
         version: "2.0.0",
         name: "Akıllı Altyazi Servisi",
-        description: "İsimden otomatik eşleşme (Anime & Film)",
+        description: "Yerel altyazılarınızı Stremio'ya aktarır",
         logo: `https://${req.get('host')}/logo.png`,
         resources: ["subtitles"],
         types: ["movie", "series", "anime"],
@@ -60,98 +58,96 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// --- 3. EVRENSEL EŞLEŞTİRİCİ (Axios Kullanıldı) ---
+// --- 3. ALTYAZI BULUCU ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const { type, id } = req.params;
     const [rawId, season, episode] = id.split(':');
     const imdbId = rawId.replace('kitsu:', '');
     const subsDir = path.join(__dirname, 'subs');
     
-    if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
+    let matchedOptions = [];
+
+    if (!fs.existsSync(subsDir)) {
+        console.log("Hata: 'subs' klasörü bulunamadı!");
+        return res.json({ subtitles: [] });
+    }
 
     let movieName = "";
     try {
         const metaType = type === 'movie' ? 'movie' : 'series';
-        // FETCH YERİNE AXIOS
-        const response = await axios.get(`https://v3-cinemeta.strem.io/meta/${metaType}/${rawId}.json`);
+        const metaUrl = `https://v3-cinemeta.strem.io/meta/${metaType}/${rawId}.json`;
+        const response = await axios.get(metaUrl);
         if (response.data && response.data.meta) movieName = response.data.meta.name;
-    } catch (err) { console.log("Meta çekilemedi."); }
+    } catch (err) {
+        console.log("Meta verisi alınamadı, isim araması yapılamayacak.");
+    }
 
-    const entries = fs.readdirSync(subsDir, { withFileTypes: true });
-    let matchedOptions = [];
     const s_pad = season ? season.padStart(2, '0') : "";
     const e_pad = episode ? episode.padStart(2, '0') : "";
 
-    // Ekleme Fonksiyonu
-    function filterAndAdd(fileList, relativePath) {
-        fileList.forEach(f => {
-            const fileName = f.toLowerCase();
-            const patterns = [`e${e_pad}`, `x${e_pad}`, `-${e_pad}`, ` ${e_pad} `, ` ${episode} `, `ep${e_pad}`, `_${e_pad}`];
-            const isCorrectEpisode = patterns.some(p => fileName.includes(p));
-            const hasWrongSeason = season && fileName.includes('s0') && !fileName.includes(`s${s_pad}`);
+    // Recursive dosya tarama (Alt klasörleri de tarar)
+    function searchFiles(dir, relativePath = "") {
+        const files = fs.readdirSync(dir, { withFileTypes: true });
+        
+        for (const file of files) {
+            const fullPath = path.join(dir, file.name);
+            const currentRelPath = relativePath ? path.join(relativePath, file.name) : file.name;
 
-            if (isCorrectEpisode && !hasWrongSeason) {
-                matchedOptions.push({
-                    id: `match-${f}-${Math.random()}`,
-                    url: `https://${req.get('host')}/download/${encodeURIComponent(relativePath + '/' + f)}`,
-                    lang: "Turkish",
-                    label: `✅ ${f.replace('.srt', '')}`
-                });
-            }
-        });
-    }
+            if (file.isDirectory()) {
+                // Sezon kontrolü: Eğer klasör adı 'Sezon 2' ise ve biz 1'i arıyorsak atla
+                const folderLower = file.name.toLowerCase();
+                if ((folderLower.includes('season') || folderLower.includes('sezon')) && 
+                    season && !folderLower.includes(season) && !folderLower.includes(s_pad)) {
+                    continue;
+                }
+                searchFiles(fullPath, currentRelPath);
+            } else if (file.name.endsWith('.srt')) {
+                const fileNameLower = file.name.toLowerCase();
+                
+                // Bölüm numarası eşleşme kontrolü
+                const patterns = [`e${e_pad}`, `x${e_pad}`, `ep${e_pad}`, ` ${e_pad}`, `-${e_pad}`, `_${e_pad}`, ` ${episode} `];
+                const isCorrectEp = patterns.some(p => fileNameLower.includes(p));
+                
+                // Sezon çakışma kontrolü
+                const isWrongSeason = season && fileNameLower.includes('s0') && !fileNameLower.includes(`s${s_pad}`);
 
-    for (const entry of entries) {
-        if (entry.isDirectory()) {
-            const folderName = entry.name.toLowerCase();
-            const folderScore = calculateMatchScore(movieName, entry.name);
-
-            if (folderScore >= 0.4 || folderName.includes(imdbId) || (movieName && folderName.includes(movieName.toLowerCase()))) {
-                const subEntries = fs.readdirSync(path.join(subsDir, entry.name), { withFileTypes: true });
-                for (const subEntry of subEntries) {
-                    const subName = subEntry.name.toLowerCase();
-                    if (subEntry.isDirectory()) {
-                        const isAnySeasonFolder = subName.includes('sezon') || subName.includes('season') || /s\d+/.test(subName);
-                        const isOurSeason = subName.includes(`sezon ${season}`) || subName.includes(`season ${season}`) || subName.includes(`s${s_pad}`);
-                        if (isAnySeasonFolder && !isOurSeason) continue;
-
-                        const srtFiles = fs.readdirSync(path.join(subsDir, entry.name, subEntry.name)).filter(f => f.endsWith('.srt'));
-                        filterAndAdd(srtFiles, entry.name + '/' + subEntry.name);
-                    } else if (subEntry.name.endsWith('.srt')) {
-                        filterAndAdd([subEntry.name], entry.name);
-                    }
+                if (isCorrectEp && !isWrongSeason) {
+                    matchedOptions.push({
+                        id: `sub-${currentRelPath}`,
+                        url: `https://${req.get('host')}/download/${encodeURIComponent(currentRelPath)}`,
+                        lang: "Turkish",
+                        label: `✅ ${file.name.replace('.srt', '')}`
+                    });
                 }
             }
         }
     }
+
+    try {
+        searchFiles(subsDir);
+    } catch (e) {
+        console.log("Arama hatası:", e);
+    }
+
+    res.setHeader('Cache-Control', 'max-age=0, no-cache, no-store, must-revalidate');
     res.json({ subtitles: matchedOptions });
 });
 
-// --- 4. GÜVENLİ ALTYAZI İNDİRME ---
+// --- 4. DOSYA İNDİRME ---
 app.get('/download/:path*', (req, res) => {
-    const fullPath = decodeURIComponent(req.params.path + (req.params[0] || ''));
-    const filePath = path.join(__dirname, 'subs', fullPath);
+    const fullRelPath = decodeURIComponent(req.params.path + (req.params[0] || ''));
+    const filePath = path.join(__dirname, 'subs', fullRelPath);
+
     if (fs.existsSync(filePath)) {
-        res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
+        res.setHeader('Content-Type', 'application/x-subrip');
+        res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
         res.download(filePath);
     } else {
-        res.status(404).send("Dosya bulunamadı.");
+        res.status(404).send("Altyazi bulunamadi.");
     }
-});
-
-// --- 5. WEB MANIFEST ---
-app.get('/site.webmanifest', (req, res) => {
-    res.json({
-        "name": "Stremio Altyazi",
-        "short_name": "Altyazi",
-        "start_url": "/",
-        "display": "standalone",
-        "background_color": "#111111",
-        "theme_color": "#111111"
-    });
 });
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-    console.log(`Sunucu ${PORT} portunda aktif.`);
+    console.log(`Sunucu ${PORT} portunda baslatildi.`);
 });
