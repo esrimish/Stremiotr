@@ -8,11 +8,13 @@ const app = express();
 app.use(cors());
 app.use(express.static(__dirname));
 
-// --- AKILLI PUANLAMA (Klasör Doğrulaması) ---
+// --- GELİŞMİŞ PUANLAMA SİSTEMİ ---
 function calculateMatchScore(query, fileName) {
     if (!query || !fileName) return 0;
-    const queryWords = query.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 2);
-    const fileWords = fileName.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/);
+    const q = query.toLowerCase().replace(/[^a-z0-9]/g, " ");
+    const f = fileName.toLowerCase().replace(/[^a-z0-9]/g, " ");
+    const queryWords = q.split(/\s+/).filter(w => w.length > 2);
+    const fileWords = f.split(/\s+/);
     let matches = 0;
     queryWords.forEach(word => {
         if (fileWords.includes(word)) matches++;
@@ -20,23 +22,23 @@ function calculateMatchScore(query, fileName) {
     return queryWords.length > 0 ? matches / queryWords.length : 0;
 }
 
-// --- 1. ANA SAYFA (Logolar Korundu) ---
+// --- 1. ANA SAYFA ---
 app.get('/', (req, res) => {
     const host = req.get('host');
     res.send(`<html><body style="background:#111;color:white;text-align:center;padding:50px;">
         <img src="/logo.png" style="width:120px;border-radius:20px;">
         <h1>Altyazi Servisi <span style="color:#00ff00">AKTIF</span></h1>
-        <p>Film ve Dizi ayrımı optimize edildi.</p>
+        <p>Sezon ve Bölüm eşleşmesi iyileştirildi.</p>
     </body></html>`);
 });
 
-// --- 2. STREMIO MANIFEST ---
+// --- 2. MANIFEST ---
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: "com.render.akillialtyazi",
-        version: "2.2.0",
+        version: "2.3.0",
         name: "Akıllı Altyazi Servisi",
-        description: "Film ve Dizi için özel filtreleme",
+        description: "Haikyuu ve Filmler için Özel Filtre",
         logo: `https://${req.get('host')}/logo.png`,
         resources: ["subtitles"],
         types: ["movie", "series", "anime"],
@@ -44,7 +46,7 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// --- 3. NOKTA ATIŞI ALTYAZI BULUCU ---
+// --- 3. AKILLI ALTYAZI MOTORU ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const { type, id } = req.params;
     const [rawId, season, episode] = id.split(':');
@@ -69,40 +71,36 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
         for (const item of items) {
             const currentRelPath = relativePath ? path.join(relativePath, item.name) : item.name;
             const fullPath = path.join(dir, item.name);
+            const lowerName = item.name.toLowerCase();
 
             if (item.isDirectory()) {
-                const folderLower = item.name.toLowerCase();
-                
-                // Dizi/Anime ise Sezon Filtresi
-                if (type !== 'movie' && (folderLower.includes('season') || folderLower.includes('sezon')) && season) {
-                    const folderNum = folderLower.match(/\d+/);
-                    if (folderNum && folderNum[0] !== season && folderNum[0] !== s_pad) continue;
+                // SEZON KLASÖRÜ KONTROLÜ (Haikyuu Çözümü)
+                if (season && (lowerName.includes('sezon') || lowerName.includes('season') || lowerName.includes(' s0') || lowerName.includes(' s1'))) {
+                    // Klasör adındaki numarayı bul (Sezon 1 -> 1)
+                    const foundSeason = lowerName.match(/\d+/);
+                    if (foundSeason && parseInt(foundSeason[0]) !== parseInt(season)) {
+                        continue; // Yanlış sezon klasörüyse İÇİNE HİÇ BAKMA
+                    }
                 }
-                
-                // Film ise ve klasör ismi filmle eşleşmiyorsa o klasöre bakma (Interstellar hatasını çözer)
-                if (type === 'movie' && movieName) {
-                    const score = calculateMatchScore(movieName, item.name);
-                    if (score < 0.3 && !folderLower.includes(movieName.toLowerCase())) continue;
-                }
-
                 searchFiles(fullPath, currentRelPath);
             } else if (item.name.endsWith('.srt')) {
-                const fileName = item.name.toLowerCase();
+                const isMovie = type === 'movie';
                 
-                if (type === 'movie') {
-                    // FİLM FİLTRESİ: Sadece film ismiyle eşleşenleri al
+                if (isMovie) {
+                    // FİLM FİLTRESİ
                     const score = calculateMatchScore(movieName, item.name);
-                    if (score > 0.2 || (movieName && fileName.includes(movieName.toLowerCase()))) {
+                    if (score > 0.2 || lowerName.includes(movieName.toLowerCase())) {
                         addSubtitle(item.name, currentRelPath);
                     }
                 } else {
-                    // DİZİ/ANİME FİLTRESİ: Bölüm ve Sezon kontrolü
-                    const patterns = [`e${e_pad}`, `x${e_pad}`, `ep${e_pad}`, `-${e_pad}`, `_${e_pad}`, ` ${e_pad}`, ` ${episode} `];
-                    const isCorrectEp = patterns.some(p => fileName.includes(p));
-                    const hasSeasonInfo = fileName.includes('s0') || fileName.includes('s1') || fileName.includes('s2');
-                    const isCorrectSeason = !season || fileName.includes(`s${s_pad}`) || !hasSeasonInfo;
+                    // DİZİ/ANİME FİLTRESİ (Bölüm + Sezon)
+                    const epPatterns = [`e${e_pad}`, `x${e_pad}`, `ep${e_pad}`, `-${e_pad}`, `_${e_pad}`, ` ${e_pad}`, ` ${episode} `];
+                    const isCorrectEp = epPatterns.some(p => lowerName.includes(p));
+                    
+                    // Dosya isminde "s02" geçiyorsa ama biz 1. sezondaysak engelle
+                    const hasWrongSeasonInfo = season && lowerName.includes('s0') && !lowerName.includes(`s${s_pad}`);
 
-                    if (isCorrectEp && isCorrectSeason) {
+                    if (isCorrectEp && !hasWrongSeasonInfo) {
                         addSubtitle(item.name, currentRelPath);
                     }
                 }
@@ -131,9 +129,9 @@ app.get('/download/:path*', (req, res) => {
         res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
         res.download(filePath);
     } else {
-        res.status(404).send("Bulunamadi.");
+        res.status(404).send("Dosya bulunamadı.");
     }
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Aktif: ${PORT}`));
+app.listen(PORT, () => console.log(`Sistem Aktif: ${PORT}`));
