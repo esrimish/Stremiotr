@@ -4,6 +4,13 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
+// Bu satırı server.js'in üst kısımlarına (path tanımlamasından sonra) ekle
+app.use(express.static(__dirname)); 
+
+// Logo isteği geldiğinde dosyayı gönder
+app.get('/logo.png', (req, res) => {
+    res.sendFile(path.join(__dirname, 'logo.png'));
+});
 app.use(cors());
 
 app.get('/manifest.json', (req, res) => {
