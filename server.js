@@ -16,21 +16,34 @@ app.use(cors());
 app.get('/', (req, res) => {
     res.send(`
         <html>
-<head>
-    <title>Stremio Altyazi Servisi</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    
-    <link rel="apple-touch-icon" href="https://${req.get('host')}/logo.png">
-    <link rel="icon" type="image/png" href="https://${req.get('host')}/logo.png">
-    
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black">
-    
-    <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
-        img { width: 150px; border-radius: 20px; margin-bottom: 20px; box-shadow: 0 0 20px rgba(255,255,255,0.1); }
-    </style>
-</head>
+   app.get('/', (req, res) => {
+    res.send(`
+        <html>
+            <head>
+                <title>Stremio Altyazi</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                
+                <link rel="apple-touch-icon" href="https://${req.get('host')}/logo.png">
+                <link rel="icon" type="image/png" href="https://${req.get('host')}/logo.png">
+                <link rel="shortcut icon" href="https://${req.get('host')}/logo.png">
+                
+                <meta name="theme-color" content="#111111">
+                <meta name="mobile-web-app-capable" content="yes">
+
+                <style>
+                    body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
+                    img { width: 120px; border-radius: 20px; margin-bottom: 20px; border: 2px solid #333; }
+                    .status { color: #00ff00; font-weight: bold; }
+                </style>
+            </head>
+            <body>
+                <img src="/logo.png" alt="Logo">
+                <h1>Altyazi Servisi <span class="status">AKTIF</span></h1>
+                <p>TV bağlantısı hazır.</p>
+            </body>
+        </html>
+    `);
+});
             <body>
                 <img src="/logo.png" alt="Logo">
                 <h1>Altyazi Servisi Aktif</h1>
