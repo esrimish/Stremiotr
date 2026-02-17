@@ -31,8 +31,16 @@ app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
 
 app.get('/download/:filename', (req, res) => {
     const filePath = path.join(__dirname, 'subs', req.params.filename);
+    
     if (fs.existsSync(filePath)) {
-        res.download(filePath);
+        // Altyazı dosyasının içeriğini oku
+        let content = fs.readFileSync(filePath);
+
+        // TV'ye bu dosyanın UTF-8 olduğunu ve altyazı formatında olduğunu söyle
+        res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename=${req.params.filename}`);
+        
+        res.send(content);
     } else {
         res.status(404).send("Altyazi bulunamadi.");
     }
