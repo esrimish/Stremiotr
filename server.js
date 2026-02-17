@@ -12,7 +12,28 @@ app.get('/logo.png', (req, res) => {
     res.sendFile(path.join(__dirname, 'logo.png'));
 });
 app.use(cors());
-
+// 1. Ana sayfaya girince düzgün bir HTML görünsün (Kısayol için gerekli)
+app.get('/', (req, res) => {
+    res.send(`
+        <html>
+            <head>
+                <title>Stremio Altyazi Servisi</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <link rel="apple-touch-icon" href="/logo.png">
+                <link rel="icon" type="image/png" href="/logo.png">
+                <style>
+                    body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
+                    img { width: 150px; border-radius: 20px; margin-bottom: 20px; }
+                </style>
+            </head>
+            <body>
+                <img src="/logo.png" alt="Logo">
+                <h1>Altyazi Servisi Aktif</h1>
+                <p>Sunucu uyanık ve hazır!</p>
+            </body>
+        </html>
+    `);
+});
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: "com.render.altyazi",
