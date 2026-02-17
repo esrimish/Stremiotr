@@ -66,7 +66,10 @@ app.get('/manifest.json', (req, res) => {
 // --- 3. EVRENSEL DİZİ & FİLM EŞLEŞTİRİCİ ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const { type, id } = req.params;
-    const [imdbId, season, episode] = id.split(':');
+    const rawId = id.split(':')[0]; // kitsu:733645
+    const imdbId = rawId.replace('kitsu:', ''); // 733645
+    const season = id.split(':')[1];
+    const episode = id.split(':')[2];
     const subsDir = path.join(__dirname, 'subs');
     
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
