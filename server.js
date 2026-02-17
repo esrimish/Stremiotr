@@ -1,3 +1,4 @@
+const axios = require('axios');
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -64,59 +65,60 @@ app.get('/manifest.json', (req, res) => {
 
 // --- 3. EVRENSEL ALTYAZI EŞLEŞTİRİCİ ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
-    const { type, id, extra } = req.params;
+    const { type, id } = req.params;
+    const imdbId = id.split(':')[0]; // tt0816692
     const subsDir = path.join(__dirname, 'subs');
     
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
     const files = fs.readdirSync(subsDir).filter(f => f.endsWith('.srt'));
 
-    // 1. ADIM: Stremio'dan gelen "extra" içindeki ismi yakala
-    const urlParams = new URLSearchParams(extra.replace(".json", ""));
-    let movieName = urlParams.get('name') || "";
+    let movieName = "";
 
-    // 2. ADIM: Eğer isim gelmediyse (Burası kritik), IMDb ID'den ismi "Tahmin Et"
-    // (Stremio ID formatı: tt12345:1:5 -> id:sezon:bolum)
-    const cleanId = id.split(':')[0];
+    try {
+        // Stremio'nun kendi meta veri servisinden (Cinemeta) ismi çekiyoruz
+        // Bu servis tamamen ücretsiz, sınırsız ve key istemez.
+        const metaType = type === 'movie' ? 'movie' : 'series';
+        const response = await axios.get(`https://v3-cinemeta.strem.io/meta/${metaType}/${imdbId}.json`);
+        
+        if (response.data && response.data.meta) {
+            movieName = response.data.meta.name; // "Interstellar"
+        }
+    } catch (err) {
+        console.log("Stremio Meta verisine ulaşılamadı.");
+    }
 
     let matchedOptions = [];
 
-    // 3. ADIM: İsimle dosya adlarını kıyasla
-    if (movieName || cleanId) {
+    if (movieName) {
         files.forEach(file => {
-            const fileNameClean = file.toLowerCase();
-            const movieNameClean = movieName.toLowerCase();
-            
-            // Puanlama yapıyoruz
             const score = calculateMatchScore(movieName, file);
             
-            // Eğer dosya adının içinde IMDb ID geçiyorsa VEYA isim %40 benziyorsa
-            if (file.includes(cleanId) || (movieName && score >= 0.4)) {
+            // Eğer dosya adı IMDb ID içeriyorsa VEYA isim %40 uyuyorsa
+            if (file.includes(imdbId) || score >= 0.4) {
                 matchedOptions.push({
-                    id: `match-${file}`,
+                    id: `auto-${file}`,
                     url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
                     lang: "Turkish",
-                    label: `⭐ %${Math.round(score * 100)} Uygun: ${file.replace('.srt', '')}`
+                    label: `✅ ${movieName} için: ${file.replace('.srt', '')}`
                 });
             }
         });
     }
 
-    // 4. ADIM: Sonuç döndürme
+    // SONUÇ: Eşleşen varsa sadece onlar, yoksa hepsi
     if (matchedOptions.length > 0) {
         res.json({ subtitles: matchedOptions });
     } else {
-        // HİÇBİR ŞEY TUTMAZSA: Kullanıcıyı darda bırakma, her şeyi göster
         res.json({
             subtitles: files.map(f => ({
                 id: `manual-${f}`,
                 url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
                 lang: "Turkish",
-                label: `📂 Manuel Seç: ${f.replace('.srt', '')}`
+                label: `📂 Dosya: ${f.replace('.srt', '')}`
             }))
         });
     }
 });
-
 // --- 4. ALTYAZI İNDİRME ---
 app.get('/download/:filename', (req, res) => {
     const filePath = path.join(__dirname, 'subs', req.params.filename);
