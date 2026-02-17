@@ -74,7 +74,9 @@ app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
 
     // Stremio'dan gelen film ismini yakala
     const urlParams = new URLSearchParams(extra.replace(".json", ""));
-    const movieName = urlParams.get('name');
+    // server.js içindeki movieName satırını şununla değiştir:
+    const movieName = urlParams.get('name') || ""; 
+// Eğer name boşsa ama başlıkta bir şeyler varsa onu temizleyip kullanmaya çalışalım
 
     let matchedOptions = [];
 
