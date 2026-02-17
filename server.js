@@ -16,16 +16,22 @@ app.use(cors());
 app.get('/', (req, res) => {
     res.send(`
         <html>
-            <head>
-                <title>Stremio Altyazi Servisi</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <link rel="apple-touch-icon" href="/logo.png">
-                <link rel="icon" type="image/png" href="/logo.png">
-                <style>
-                    body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
-                    img { width: 150px; border-radius: 20px; margin-bottom: 20px; }
-                </style>
-            </head>
+            // app.get('/') içindeki head kısmını şununla değiştir:
+<head>
+    <title>Stremio Altyazi Servisi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <link rel="apple-touch-icon" href="https://${req.get('host')}/logo.png">
+    <link rel="icon" type="image/png" href="https://${req.get('host')}/logo.png">
+    
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
+        img { width: 150px; border-radius: 20px; margin-bottom: 20px; box-shadow: 0 0 20px rgba(255,255,255,0.1); }
+    </style>
+</head>
             <body>
                 <img src="/logo.png" alt="Logo">
                 <h1>Altyazi Servisi Aktif</h1>
