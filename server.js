@@ -5,10 +5,23 @@ const path = require('path');
 const app = express();
 
 app.use(cors());
-// Statik dosyaları (logo.png gibi) dışarı açar
 app.use(express.static(__dirname));
 
-// --- 1. ANA SAYFA (TELEFON KISAYOLU İÇİN) ---
+// --- AKILLI PUANLAMA FONKSİYONU (Anime/Film İsmi Eşleştirme) ---
+function calculateMatchScore(query, fileName) {
+    if (!query || !fileName) return 0;
+    // İsimleri temizle ve kelimelere böl
+    const queryWords = query.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 2);
+    const fileWords = fileName.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/);
+
+    let matches = 0;
+    queryWords.forEach(word => {
+        if (fileWords.includes(word)) matches++;
+    });
+    return matches / queryWords.length;
+}
+
+// --- 1. ANA SAYFA (Logo ve Uyandırma) ---
 app.get('/', (req, res) => {
     const host = req.get('host');
     res.send(`
@@ -38,27 +51,69 @@ app.get('/', (req, res) => {
 // --- 2. STREMIO MANIFEST ---
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: "com.render.altyazi",
-        version: "1.0.1",
-        name: "Render Altyazi Servisi",
-        description: "HTTPS Destekli Kişisel Altyazi",
+        id: "com.render.akillialtyazi",
+        version: "2.0.0",
+        name: "Akıllı Altyazi Servisi",
+        description: "İsimden otomatik eşleşme (Anime & Film)",
         logo: `https://${req.get('host')}/logo.png`,
         resources: ["subtitles"],
-        types: ["movie", "series"],
-        idPrefixes: ["tt"]
+        types: ["movie", "series", "anime"],
+        idPrefixes: ["tt", "kitsu", "libvlc"]
     });
 });
 
-// --- 3. ALTYAZI LİSTELEME ---
+// --- 3. AKILLI ALTYAZI LİSTELEME ---
 app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
     const imdbId = req.params.id.split(':')[0];
-    res.json({
-        subtitles: [{
-            id: "local-sub",
-            url: `https://${req.get('host')}/download/${imdbId}.srt`,
-            lang: "Turkish"
-        }]
+    const extra = req.params.extra;
+    const subsDir = path.join(__dirname, 'subs');
+    
+    if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
+    const files = fs.readdirSync(subsDir).filter(f => f.endsWith('.srt'));
+
+    // Stremio'dan gelen film ismini yakala
+    const urlParams = new URLSearchParams(extra.replace(".json", ""));
+    const movieName = urlParams.get('name');
+
+    let bestMatch = null;
+    let highestScore = 0;
+
+    files.forEach(file => {
+        // Önce IMDb ID kontrolü (Varsa en garantisi budur)
+        if (file.includes(imdbId)) {
+            highestScore = 2; // ID eşleşmesine en yüksek puanı ver
+            bestMatch = file;
+        } else {
+            // ID yoksa isim puanlaması yap (Anime ve diğerleri için)
+            const score = calculateMatchScore(movieName, file);
+            if (score > highestScore) {
+                highestScore = score;
+                bestMatch = file;
+            }
+        }
     });
+
+    // Eğer bir eşleşme bulunduysa (ID ile veya %40+ isim benzerliği ile)
+    if (bestMatch && highestScore > 0.4) {
+        res.json({
+            subtitles: [{
+                id: `smart-${bestMatch}`,
+                url: `https://${req.get('host')}/download/${encodeURIComponent(bestMatch)}`,
+                lang: "Turkish",
+                label: bestMatch.replace('.srt', '')
+            }]
+        });
+    } else {
+        // Hiçbir şey bulunamadıysa klasördeki tüm dosyaları listele (Yedek plan)
+        res.json({
+            subtitles: files.map(f => ({
+                id: f,
+                url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
+                lang: "Turkish",
+                label: f
+            }))
+        });
+    }
 });
 
 // --- 4. ALTYAZI İNDİRME ---
@@ -71,23 +126,15 @@ app.get('/download/:filename', (req, res) => {
         res.status(404).send("Altyazi bulunamadi.");
     }
 });
-// Telefonların "Uygulama" olarak tanıması için gereken özel dosya
+
+// --- 5. WEB MANIFEST ---
 app.get('/site.webmanifest', (req, res) => {
     res.json({
         "name": "Stremio Altyazi",
         "short_name": "Altyazi",
         "icons": [
-            {
-                "src": "/logo.png",
-                "sizes": "192x192",
-                "type": "image/png",
-                "purpose": "any maskable"
-            },
-            {
-                "src": "/logo.png",
-                "sizes": "512x512",
-                "type": "image/png"
-            }
+            { "src": "/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+            { "src": "/logo.png", "sizes": "512x512", "type": "image/png" }
         ],
         "start_url": "/",
         "display": "standalone",
@@ -95,6 +142,7 @@ app.get('/site.webmanifest', (req, res) => {
         "theme_color": "#111111"
     });
 });
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
