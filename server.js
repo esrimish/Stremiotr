@@ -83,10 +83,6 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
 
     const entries = fs.readdirSync(subsDir, { withFileTypes: true });
     let matchedOptions = [];
-
-    // Sezon ve Bölüm formatlarını hazırla (Örn: S01, E01)
-    const s_pad = season ? season.padStart(2, '0') : "";
-    const e_pad = episode ? episode.padStart(2, '0') : "";
     function filterAndAdd(fileList, relativePath) {
         fileList.forEach(f => {
             const fileName = f.toLowerCase();
@@ -109,6 +105,10 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
                 });
             }
         });
+
+    // Sezon ve Bölüm formatlarını hazırla (Örn: S01, E01)
+    const s_pad = season ? season.padStart(2, '0') : "";
+    const e_pad = episode ? episode.padStart(2, '0') : "";
     }
     // 2. KLASÖR TARAMASI
     for (const entry of entries) {
