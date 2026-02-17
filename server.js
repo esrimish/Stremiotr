@@ -66,68 +66,84 @@ app.get('/manifest.json', (req, res) => {
 // --- 3. EVRENSEL DİZİ & FİLM EŞLEŞTİRİCİ ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const { type, id } = req.params;
-    const idParts = id.split(':'); // [tt..., sezon, bolum]
-    const imdbId = idParts[0];
-    const season = idParts[1];
-    const episode = idParts[2];
-    
+    const [imdbId, season, episode] = id.split(':');
     const subsDir = path.join(__dirname, 'subs');
+    
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
-    const files = fs.readdirSync(subsDir).filter(f => f.endsWith('.srt'));
 
+    // 1. Film/Anime Adını İnternetten Çek
     let movieName = "";
     try {
         const metaType = type === 'movie' ? 'movie' : 'series';
         const response = await fetch(`https://v3-cinemeta.strem.io/meta/${metaType}/${imdbId}.json`);
         const data = await response.json();
         if (data && data.meta) movieName = data.meta.name;
-    } catch (err) { console.log("Meta çekilemedi."); }
+    } catch (err) { console.log("İsim çekilemedi."); }
+
+    let finalFiles = [];
+    const entries = fs.readdirSync(subsDir, { withFileTypes: true });
+
+    // 2. Klasör ve Dosya Taraması
+    entries.forEach(entry => {
+        const entryName = entry.name.toLowerCase();
+        const cleanMovieName = movieName.toLowerCase();
+
+        if (entry.isDirectory()) {
+            // KLASÖR MANTIĞI: Klasör adı film adıyla uyuşuyor mu? (%40 kuralı)
+            const folderScore = calculateMatchScore(movieName, entry.name);
+            if (folderScore >= 0.4 || entryName.includes(imdbId) || entryName.includes(cleanMovieName)) {
+                // Eğer klasör doğruysa, sadece bu klasörün içindeki SRT'leri listeye al
+                const subFiles = fs.readdirSync(path.join(subsDir, entry.name))
+                                   .filter(f => f.endsWith('.srt'));
+                subFiles.forEach(f => finalFiles.push({ name: f, path: path.join(entry.name, f), fromFolder: true }));
+            }
+        } else if (entry.name.endsWith('.srt')) {
+            // DOSYA MANTIĞI: Klasör dışında duran tekil dosyalar
+            finalFiles.push({ name: entry.name, path: entry.name, fromFolder: false });
+        }
+    });
 
     let matchedOptions = [];
+    const s = season ? season.padStart(2, '0') : null;
+    const e = episode ? episode.padStart(2, '0') : null;
 
-    files.forEach(file => {
-        const fileName = file.toLowerCase();
-        let score = calculateMatchScore(movieName, file);
-        
-        // --- DİZİ/ANİME MANTIĞI ---
-        if (type !== 'movie' && season && episode) {
-            const s = season.padStart(2, '0'); // 1 -> 01
-            const e = episode.padStart(2, '0'); // 5 -> 05
-            
-            // Dosya adında hem isim hem de "S01E05" veya "1x05" geçiyor mu?
-            const hasEpisodeInfo = fileName.includes(`s${s}e${e}`) || 
-                                   fileName.includes(`${season}x${e}`) ||
-                                   (fileName.includes(`ep${e}`) && score > 0.3);
+    // 3. Bulunan Dosyalar İçinde Bölüm Filtrelemesi
+    finalFiles.forEach(fileObj => {
+        const fileName = fileObj.name.toLowerCase();
+        let isMatch = false;
 
-            if (hasEpisodeInfo && (score > 0.3 || fileName.includes(imdbId))) {
-                matchedOptions.push({
-                    id: `series-${file}`,
-                    url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
-                    lang: "Turkish",
-                    label: `📺 S${s}E${e} | ${file.replace('.srt', '')}`
-                });
+        if (type !== 'movie' && s && e) {
+            // Dizi/Anime ise: Sezon ve Bölüm kontrolü
+            if (fileName.includes(`s${s}e${e}`) || fileName.includes(`${season}x${e}`) || fileName.includes(`e${e}`) || fileName.includes(` ${episode} `) || fileName.includes(`-${e}`)) {
+                isMatch = true;
             }
-        } 
-        // --- FİLM MANTIĞI ---
-        else if (score >= 0.4 || fileName.includes(imdbId)) {
+        } else {
+            // Film ise: İsim benzerliği kontrolü
+            if (calculateMatchScore(movieName, fileObj.name) >= 0.4 || fileName.includes(imdbId)) {
+                isMatch = true;
+            }
+        }
+
+        if (isMatch) {
             matchedOptions.push({
-                id: `movie-${file}`,
-                url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
+                id: `match-${fileObj.path}`,
+                url: `https://${req.get('host')}/download/${encodeURIComponent(fileObj.path)}`,
                 lang: "Turkish",
-                label: `🎬 ${movieName}: ${file.replace('.srt', '')}`
+                label: `${fileObj.fromFolder ? '📂 ' : '📄 '}${fileObj.name.replace('.srt', '')}`
             });
         }
     });
 
-    // Sonuç yoksa "Yedek Plan" (Hepsini göster)
+    // SONUÇ DÖNDÜRME
     if (matchedOptions.length > 0) {
         res.json({ subtitles: matchedOptions });
     } else {
-        res.json({ subtitles: files.map(f => ({
-            id: `manual-${f}`,
-            url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
+        // Hiçbir şey bulunamazsa tüm SRT'leri dök (Yedek Plan)
+        res.json({ subtitles: finalFiles.map(f => ({
+            id: `manual-${f.path}`,
+            url: `https://${req.get('host')}/download/${encodeURIComponent(f.path)}`,
             lang: "Turkish",
-            label: `📂 Manuel: ${f.replace('.srt', '')}`
+            label: `🔍 ${f.name}`
         }))});
     }
 });
