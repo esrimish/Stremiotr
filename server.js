@@ -8,18 +8,30 @@ const app = express();
 app.use(cors());
 app.use(express.static(__dirname));
 
-// --- GELİŞMİŞ PUANLAMA SİSTEMİ ---
+// --- DAHA ESNEK PUANLAMA SİSTEMİ ---
 function calculateMatchScore(query, fileName) {
     if (!query || !fileName) return 0;
-    const q = query.toLowerCase().replace(/[^a-z0-9]/g, " ");
-    const f = fileName.toLowerCase().replace(/[^a-z0-9]/g, " ");
+    
+    // Yıl bilgisi (2014 gibi) ve özel karakterleri temizle
+    const clean = (text) => text.toLowerCase()
+        .replace(/\(\d{4}\)/g, "") // (2024) gibi yılları sil
+        .replace(/[^a-z0-9]/g, " ")
+        .trim();
+
+    const q = clean(query);
+    const f = clean(fileName);
+    
     const queryWords = q.split(/\s+/).filter(w => w.length > 2);
     const fileWords = f.split(/\s+/);
+    
+    if (queryWords.length === 0) return f.includes(q) ? 1 : 0;
+
     let matches = 0;
     queryWords.forEach(word => {
         if (fileWords.includes(word)) matches++;
     });
-    return queryWords.length > 0 ? matches / queryWords.length : 0;
+    
+    return matches / queryWords.length;
 }
 
 // --- 1. ANA SAYFA ---
@@ -28,7 +40,7 @@ app.get('/', (req, res) => {
     res.send(`<html><body style="background:#111;color:white;text-align:center;padding:50px;">
         <img src="/logo.png" style="width:120px;border-radius:20px;">
         <h1>Altyazi Servisi <span style="color:#00ff00">AKTIF</span></h1>
-        <p>Sezon ve Bölüm eşleşmesi iyileştirildi.</p>
+        <p>Film eşleme algoritması iyileştirildi.</p>
     </body></html>`);
 });
 
@@ -36,9 +48,9 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: "com.render.akillialtyazi",
-        version: "2.3.0",
+        version: "2.4.0",
         name: "Akıllı Altyazi Servisi",
-        description: "Haikyuu ve Filmler için Özel Filtre",
+        description: "Gelişmiş Film & Dizi Eşleme",
         logo: `https://${req.get('host')}/logo.png`,
         resources: ["subtitles"],
         types: ["movie", "series", "anime"],
@@ -74,30 +86,26 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
             const lowerName = item.name.toLowerCase();
 
             if (item.isDirectory()) {
-                // SEZON KLASÖRÜ KONTROLÜ (Haikyuu Çözümü)
+                // SEZON KONTROLÜ
                 if (season && (lowerName.includes('sezon') || lowerName.includes('season') || lowerName.includes(' s0') || lowerName.includes(' s1'))) {
-                    // Klasör adındaki numarayı bul (Sezon 1 -> 1)
                     const foundSeason = lowerName.match(/\d+/);
-                    if (foundSeason && parseInt(foundSeason[0]) !== parseInt(season)) {
-                        continue; // Yanlış sezon klasörüyse İÇİNE HİÇ BAKMA
-                    }
+                    if (foundSeason && parseInt(foundSeason[0]) !== parseInt(season)) continue;
                 }
                 searchFiles(fullPath, currentRelPath);
             } else if (item.name.endsWith('.srt')) {
-                const isMovie = type === 'movie';
-                
-                if (isMovie) {
-                    // FİLM FİLTRESİ
+                if (type === 'movie') {
+                    // FİLM FİLTRESİ (Daha esnek hale getirildi)
                     const score = calculateMatchScore(movieName, item.name);
-                    if (score > 0.2 || lowerName.includes(movieName.toLowerCase())) {
+                    const movieNameClean = movieName.toLowerCase().replace(/[^a-z0-9]/g, "");
+                    const fileNameClean = lowerName.replace(/[^a-z0-9]/g, "");
+
+                    if (score > 0.4 || fileNameClean.includes(movieNameClean)) {
                         addSubtitle(item.name, currentRelPath);
                     }
                 } else {
-                    // DİZİ/ANİME FİLTRESİ (Bölüm + Sezon)
+                    // DİZİ/ANİME FİLTRESİ
                     const epPatterns = [`e${e_pad}`, `x${e_pad}`, `ep${e_pad}`, `-${e_pad}`, `_${e_pad}`, ` ${e_pad}`, ` ${episode} `];
                     const isCorrectEp = epPatterns.some(p => lowerName.includes(p));
-                    
-                    // Dosya isminde "s02" geçiyorsa ama biz 1. sezondaysak engelle
                     const hasWrongSeasonInfo = season && lowerName.includes('s0') && !lowerName.includes(`s${s_pad}`);
 
                     if (isCorrectEp && !hasWrongSeasonInfo) {
