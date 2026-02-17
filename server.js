@@ -150,7 +150,6 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     // 3. SONUÇ
     res.json({ subtitles: matchedOptions });
 });
-});
 // --- 4. ALTYAZI İNDİRME ---
 app.get('/download/:filename', (req, res) => {
     const filePath = path.join(__dirname, 'subs', req.params.filename);
