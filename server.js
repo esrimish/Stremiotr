@@ -63,60 +63,72 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// --- 3. EVRENSEL ALTYAZI EŞLEŞTİRİCİ ---
+// --- 3. EVRENSEL DİZİ & FİLM EŞLEŞTİRİCİ ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const { type, id } = req.params;
-    const imdbId = id.split(':')[0]; // tt0816692
-    const subsDir = path.join(__dirname, 'subs');
+    const idParts = id.split(':'); // [tt..., sezon, bolum]
+    const imdbId = idParts[0];
+    const season = idParts[1];
+    const episode = idParts[2];
     
+    const subsDir = path.join(__dirname, 'subs');
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
     const files = fs.readdirSync(subsDir).filter(f => f.endsWith('.srt'));
 
     let movieName = "";
-
     try {
-        // Stremio'nun kendi meta veri servisinden (Cinemeta) ismi çekiyoruz
-        // Bu servis tamamen ücretsiz, sınırsız ve key istemez.
         const metaType = type === 'movie' ? 'movie' : 'series';
-        const response = await axios.get(`https://v3-cinemeta.strem.io/meta/${metaType}/${imdbId}.json`);
-        
-        if (response.data && response.data.meta) {
-            movieName = response.data.meta.name; // "Interstellar"
-        }
-    } catch (err) {
-        console.log("Stremio Meta verisine ulaşılamadı.");
-    }
+        const response = await fetch(`https://v3-cinemeta.strem.io/meta/${metaType}/${imdbId}.json`);
+        const data = await response.json();
+        if (data && data.meta) movieName = data.meta.name;
+    } catch (err) { console.log("Meta çekilemedi."); }
 
     let matchedOptions = [];
 
-    if (movieName) {
-        files.forEach(file => {
-            const score = calculateMatchScore(movieName, file);
+    files.forEach(file => {
+        const fileName = file.toLowerCase();
+        let score = calculateMatchScore(movieName, file);
+        
+        // --- DİZİ/ANİME MANTIĞI ---
+        if (type !== 'movie' && season && episode) {
+            const s = season.padStart(2, '0'); // 1 -> 01
+            const e = episode.padStart(2, '0'); // 5 -> 05
             
-            // Eğer dosya adı IMDb ID içeriyorsa VEYA isim %40 uyuyorsa
-            if (file.includes(imdbId) || score >= 0.4) {
+            // Dosya adında hem isim hem de "S01E05" veya "1x05" geçiyor mu?
+            const hasEpisodeInfo = fileName.includes(`s${s}e${e}`) || 
+                                   fileName.includes(`${season}x${e}`) ||
+                                   (fileName.includes(`ep${e}`) && score > 0.3);
+
+            if (hasEpisodeInfo && (score > 0.3 || fileName.includes(imdbId))) {
                 matchedOptions.push({
-                    id: `auto-${file}`,
+                    id: `series-${file}`,
                     url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
                     lang: "Turkish",
-                    label: `✅ ${movieName} için: ${file.replace('.srt', '')}`
+                    label: `📺 S${s}E${e} | ${file.replace('.srt', '')}`
                 });
             }
-        });
-    }
+        } 
+        // --- FİLM MANTIĞI ---
+        else if (score >= 0.4 || fileName.includes(imdbId)) {
+            matchedOptions.push({
+                id: `movie-${file}`,
+                url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
+                lang: "Turkish",
+                label: `🎬 ${movieName}: ${file.replace('.srt', '')}`
+            });
+        }
+    });
 
-    // SONUÇ: Eşleşen varsa sadece onlar, yoksa hepsi
+    // Sonuç yoksa "Yedek Plan" (Hepsini göster)
     if (matchedOptions.length > 0) {
         res.json({ subtitles: matchedOptions });
     } else {
-        res.json({
-            subtitles: files.map(f => ({
-                id: `manual-${f}`,
-                url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
-                lang: "Turkish",
-                label: `📂 Dosya: ${f.replace('.srt', '')}`
-            }))
-        });
+        res.json({ subtitles: files.map(f => ({
+            id: `manual-${f}`,
+            url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
+            lang: "Turkish",
+            label: `📂 Manuel: ${f.replace('.srt', '')}`
+        }))});
     }
 });
 // --- 4. ALTYAZI İNDİRME ---
