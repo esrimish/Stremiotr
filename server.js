@@ -71,79 +71,91 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
 
-    // 1. Film/Anime Adını İnternetten Çek
+    // 1. Stremio'dan Gerçek İsmi Al
     let movieName = "";
     try {
         const metaType = type === 'movie' ? 'movie' : 'series';
         const response = await fetch(`https://v3-cinemeta.strem.io/meta/${metaType}/${imdbId}.json`);
         const data = await response.json();
         if (data && data.meta) movieName = data.meta.name;
-    } catch (err) { console.log("İsim çekilemedi."); }
+    } catch (err) { console.log("İsim alınamadı."); }
 
-    let finalFiles = [];
     const entries = fs.readdirSync(subsDir, { withFileTypes: true });
-
-    // 2. Klasör ve Dosya Taraması
-    entries.forEach(entry => {
-        const entryName = entry.name.toLowerCase();
-        const cleanMovieName = movieName.toLowerCase();
-
-        if (entry.isDirectory()) {
-            // KLASÖR MANTIĞI: Klasör adı film adıyla uyuşuyor mu? (%40 kuralı)
-            const folderScore = calculateMatchScore(movieName, entry.name);
-            if (folderScore >= 0.4 || entryName.includes(imdbId) || entryName.includes(cleanMovieName)) {
-                // Eğer klasör doğruysa, sadece bu klasörün içindeki SRT'leri listeye al
-                const subFiles = fs.readdirSync(path.join(subsDir, entry.name))
-                                   .filter(f => f.endsWith('.srt'));
-                subFiles.forEach(f => finalFiles.push({ name: f, path: path.join(entry.name, f), fromFolder: true }));
-            }
-        } else if (entry.name.endsWith('.srt')) {
-            // DOSYA MANTIĞI: Klasör dışında duran tekil dosyalar
-            finalFiles.push({ name: entry.name, path: entry.name, fromFolder: false });
-        }
-    });
-
     let matchedOptions = [];
-    const s = season ? season.padStart(2, '0') : null;
-    const e = episode ? episode.padStart(2, '0') : null;
+    let foundInFolder = false;
 
-    // 3. Bulunan Dosyalar İçinde Bölüm Filtrelemesi
-    finalFiles.forEach(fileObj => {
-        const fileName = fileObj.name.toLowerCase();
-        let isMatch = false;
+    // 2. ÖNCELİK: KLASÖR TARAMASI
+    for (const entry of entries) {
+        if (entry.isDirectory()) {
+            const folderScore = calculateMatchScore(movieName, entry.name);
+            // Klasör ismi film adıyla uyuşuyor mu?
+            if (folderScore >= 0.4 || entry.name.toLowerCase().includes(imdbId)) {
+                const subFiles = fs.readdirSync(path.join(subsDir, entry.name)).filter(f => f.endsWith('.srt'));
+                
+                subFiles.forEach(f => {
+                    const fileName = f.toLowerCase();
+                    let isEpisodeMatch = false;
 
-        if (type !== 'movie' && s && e) {
-            // Dizi/Anime ise: Sezon ve Bölüm kontrolü
-            if (fileName.includes(`s${s}e${e}`) || fileName.includes(`${season}x${e}`) || fileName.includes(`e${e}`) || fileName.includes(` ${episode} `) || fileName.includes(`-${e}`)) {
-                isMatch = true;
-            }
-        } else {
-            // Film ise: İsim benzerliği kontrolü
-            if (calculateMatchScore(movieName, fileObj.name) >= 0.4 || fileName.includes(imdbId)) {
-                isMatch = true;
+                    if (type !== 'movie' && season && episode) {
+                        const s = season.padStart(2, '0');
+                        const e = episode.padStart(2, '0');
+                        // Bölüm kontrolü: S01E05, 1x05, E05 veya sadece " 5 " gibi
+                        if (fileName.includes(`s${s}e${e}`) || fileName.includes(`${season}x${e}`) || 
+                            fileName.includes(`e${e}`) || fileName.includes(`-${e}`) || fileName.includes(` ${episode} `)) {
+                            isEpisodeMatch = true;
+                        }
+                    } else {
+                        isEpisodeMatch = true; // Film klasörüyse içindeki SRT'leri direkt al
+                    }
+
+                    if (isEpisodeMatch) {
+                        foundInFolder = true; // Klasörde eşleşme bulduk!
+                        matchedOptions.push({
+                            id: `folder-${entry.name}-${f}`,
+                            url: `https://${req.get('host')}/download/${encodeURIComponent(entry.name + '/' + f)}`,
+                            lang: "Turkish",
+                            label: `📂 ${entry.name} > ${f.replace('.srt', '')}`
+                        });
+                    }
+                });
             }
         }
+    }
 
-        if (isMatch) {
-            matchedOptions.push({
-                id: `match-${fileObj.path}`,
-                url: `https://${req.get('host')}/download/${encodeURIComponent(fileObj.path)}`,
-                lang: "Turkish",
-                label: `${fileObj.fromFolder ? '📂 ' : '📄 '}${fileObj.name.replace('.srt', '')}`
-            });
-        }
-    });
+    // 3. İKİNCİ PLANDA: DIŞARIDAKİ DOSYALAR (Eğer klasörde bulunamadıysa)
+    if (!foundInFolder) {
+        entries.filter(e => !e.isDirectory() && e.name.endsWith('.srt')).forEach(file => {
+            const score = calculateMatchScore(movieName, file.name);
+            if (score >= 0.4 || file.name.includes(imdbId)) {
+                matchedOptions.push({
+                    id: `file-${file.name}`,
+                    url: `https://${req.get('host')}/download/${encodeURIComponent(file.name)}`,
+                    lang: "Turkish",
+                    label: `📄 ${file.name.replace('.srt', '')}`
+                });
+            }
+        });
+    }
 
-    // SONUÇ DÖNDÜRME
+    // 4. SONUÇ: Eşleşme varsa ver, yoksa (Yedek Plan) hepsini dök
     if (matchedOptions.length > 0) {
         res.json({ subtitles: matchedOptions });
     } else {
-        // Hiçbir şey bulunamazsa tüm SRT'leri dök (Yedek Plan)
-        res.json({ subtitles: finalFiles.map(f => ({
-            id: `manual-${f.path}`,
-            url: `https://${req.get('host')}/download/${encodeURIComponent(f.path)}`,
+        // Hiçbir akıllı eşleşme yoksa klasör yapısını bozmadan her şeyi göster
+        const all = [];
+        entries.forEach(e => {
+            if (e.isDirectory()) {
+                const sub = fs.readdirSync(path.join(subsDir, e.name)).filter(f => f.endsWith('.srt'));
+                sub.forEach(f => all.push({ path: e.name + '/' + f, name: f }));
+            } else if (e.name.endsWith('.srt')) {
+                all.push({ path: e.name, name: e.name });
+            }
+        });
+        res.json({ subtitles: all.map(a => ({
+            id: `manual-${a.path}`,
+            url: `https://${req.get('host')}/download/${encodeURIComponent(a.path)}`,
             lang: "Turkish",
-            label: `🔍 ${f.name}`
+            label: `🔍 ${a.name}`
         }))});
     }
 });
