@@ -8,7 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.static(__dirname));
 
-// --- AKILLI PUANLAMA (Klasör Doğrulaması İçin) ---
+// --- AKILLI PUANLAMA (Klasör Doğrulaması) ---
 function calculateMatchScore(query, fileName) {
     if (!query || !fileName) return 0;
     const queryWords = query.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 2);
@@ -26,7 +26,7 @@ app.get('/', (req, res) => {
     res.send(`<html><body style="background:#111;color:white;text-align:center;padding:50px;">
         <img src="/logo.png" style="width:120px;border-radius:20px;">
         <h1>Altyazi Servisi <span style="color:#00ff00">AKTIF</span></h1>
-        <p>Sadece ilgili bölümler listelenir.</p>
+        <p>Film ve Dizi ayrımı optimize edildi.</p>
     </body></html>`);
 });
 
@@ -34,9 +34,9 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: "com.render.akillialtyazi",
-        version: "2.1.0",
+        version: "2.2.0",
         name: "Akıllı Altyazi Servisi",
-        description: "Nokta atışı bölüm eşleme",
+        description: "Film ve Dizi için özel filtreleme",
         logo: `https://${req.get('host')}/logo.png`,
         resources: ["subtitles"],
         types: ["movie", "series", "anime"],
@@ -44,7 +44,7 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// --- 3. SPESİFİK ALTYAZI BULUCU ---
+// --- 3. NOKTA ATIŞI ALTYAZI BULUCU ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const { type, id } = req.params;
     const [rawId, season, episode] = id.split(':');
@@ -72,33 +72,51 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
 
             if (item.isDirectory()) {
                 const folderLower = item.name.toLowerCase();
-                // SEZON KONTROLÜ: Eğer klasör adında "Season 2" geçiyor ama biz 1. sezondaysak bu klasöre HİÇ GİRME
-                if ((folderLower.includes('season') || folderLower.includes('sezon')) && season) {
+                
+                // Dizi/Anime ise Sezon Filtresi
+                if (type !== 'movie' && (folderLower.includes('season') || folderLower.includes('sezon')) && season) {
                     const folderNum = folderLower.match(/\d+/);
                     if (folderNum && folderNum[0] !== season && folderNum[0] !== s_pad) continue;
                 }
+                
+                // Film ise ve klasör ismi filmle eşleşmiyorsa o klasöre bakma (Interstellar hatasını çözer)
+                if (type === 'movie' && movieName) {
+                    const score = calculateMatchScore(movieName, item.name);
+                    if (score < 0.3 && !folderLower.includes(movieName.toLowerCase())) continue;
+                }
+
                 searchFiles(fullPath, currentRelPath);
             } else if (item.name.endsWith('.srt')) {
                 const fileName = item.name.toLowerCase();
                 
-                // BÖLÜM KONTROLÜ (Spesifik filtreleme)
-                const patterns = [`e${e_pad}`, `x${e_pad}`, `ep${e_pad}`, `-${e_pad}`, `_${e_pad}`, ` ${e_pad}`, ` ${episode} `];
-                const isCorrectEp = patterns.some(p => fileName.includes(p));
-                
-                // SEZON KONTROLÜ (Dosya adı içindeki S01, S02 kontrolü)
-                const hasSeasonInfo = fileName.includes('s0') || fileName.includes('s1') || fileName.includes('s2');
-                const isCorrectSeason = !season || fileName.includes(`s${s_pad}`) || !hasSeasonInfo;
+                if (type === 'movie') {
+                    // FİLM FİLTRESİ: Sadece film ismiyle eşleşenleri al
+                    const score = calculateMatchScore(movieName, item.name);
+                    if (score > 0.2 || (movieName && fileName.includes(movieName.toLowerCase()))) {
+                        addSubtitle(item.name, currentRelPath);
+                    }
+                } else {
+                    // DİZİ/ANİME FİLTRESİ: Bölüm ve Sezon kontrolü
+                    const patterns = [`e${e_pad}`, `x${e_pad}`, `ep${e_pad}`, `-${e_pad}`, `_${e_pad}`, ` ${e_pad}`, ` ${episode} `];
+                    const isCorrectEp = patterns.some(p => fileName.includes(p));
+                    const hasSeasonInfo = fileName.includes('s0') || fileName.includes('s1') || fileName.includes('s2');
+                    const isCorrectSeason = !season || fileName.includes(`s${s_pad}`) || !hasSeasonInfo;
 
-                if (isCorrectEp && isCorrectSeason) {
-                    matchedOptions.push({
-                        id: `sub-${item.name}-${Math.random()}`,
-                        url: `https://${req.get('host')}/download/${encodeURIComponent(currentRelPath)}`,
-                        lang: "Turkish",
-                        label: `✅ ${item.name.replace('.srt', '')}`
-                    });
+                    if (isCorrectEp && isCorrectSeason) {
+                        addSubtitle(item.name, currentRelPath);
+                    }
                 }
             }
         }
+    }
+
+    function addSubtitle(name, relPath) {
+        matchedOptions.push({
+            id: `sub-${name}-${Math.random()}`,
+            url: `https://${req.get('host')}/download/${encodeURIComponent(relPath)}`,
+            lang: "Turkish",
+            label: `✅ ${name.replace('.srt', '')}`
+        });
     }
 
     searchFiles(subsDir);
@@ -118,4 +136,4 @@ app.get('/download/:path*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Port: ${PORT}`));
+app.listen(PORT, () => console.log(`Aktif: ${PORT}`));
