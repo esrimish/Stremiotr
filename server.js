@@ -62,39 +62,35 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// --- 3. AKILLI ALTYAZI LİSTELEME ---
-// --- 3. AKILLI ALTYAZI LİSTELEME (GELİŞMİŞ FİLTRELEME + YEDEK PLAN) ---
-app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
-    const imdbId = req.params.id.split(':')[0];
-    const extra = req.params.extra;
+// --- 3. EVRENSEL ALTYAZI EŞLEŞTİRİCİ ---
+app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
+    const { type, id, extra } = req.params;
     const subsDir = path.join(__dirname, 'subs');
     
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
     const files = fs.readdirSync(subsDir).filter(f => f.endsWith('.srt'));
 
-    // Stremio'dan gelen film ismini yakala
+    // 1. ADIM: Stremio'dan gelen "extra" içindeki ismi yakala
     const urlParams = new URLSearchParams(extra.replace(".json", ""));
-    // server.js içindeki movieName satırını şununla değiştir:
-    const movieName = urlParams.get('name') || ""; 
-// Eğer name boşsa ama başlıkta bir şeyler varsa onu temizleyip kullanmaya çalışalım
+    let movieName = urlParams.get('name') || "";
+
+    // 2. ADIM: Eğer isim gelmediyse (Burası kritik), IMDb ID'den ismi "Tahmin Et"
+    // (Stremio ID formatı: tt12345:1:5 -> id:sezon:bolum)
+    const cleanId = id.split(':')[0];
 
     let matchedOptions = [];
 
-    files.forEach(file => {
-        // 1. IMDb ID kontrolü (En yüksek öncelik)
-        if (file.includes(imdbId)) {
-            matchedOptions.push({
-                id: `id-${file}`,
-                url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
-                lang: "Turkish",
-                label: `🎯 TAM EŞLEŞME: ${file.replace('.srt', '')}`
-            });
-        } else {
-            // 2. İsim puanlaması (Anime ve diğerleri için)
+    // 3. ADIM: İsimle dosya adlarını kıyasla
+    if (movieName || cleanId) {
+        files.forEach(file => {
+            const fileNameClean = file.toLowerCase();
+            const movieNameClean = movieName.toLowerCase();
+            
+            // Puanlama yapıyoruz
             const score = calculateMatchScore(movieName, file);
             
-            // Hassasiyet: %40 ve üzeri benzerlik varsa listeye ekle
-            if (score >= 0.4) {
+            // Eğer dosya adının içinde IMDb ID geçiyorsa VEYA isim %40 benziyorsa
+            if (file.includes(cleanId) || (movieName && score >= 0.4)) {
                 matchedOptions.push({
                     id: `match-${file}`,
                     url: `https://${req.get('host')}/download/${encodeURIComponent(file)}`,
@@ -102,22 +98,22 @@ app.get('/subtitles/:type/:id/:extra.json', (req, res) => {
                     label: `⭐ %${Math.round(score * 100)} Uygun: ${file.replace('.srt', '')}`
                 });
             }
-        }
-    });
+        });
+    }
 
-    // SONUÇ DÖNDÜRME MANTIĞI:
+    // 4. ADIM: Sonuç döndürme
     if (matchedOptions.length > 0) {
-        // Eğer akıllı eşleşme bir şeyler bulduysa sadece onları göster
         res.json({ subtitles: matchedOptions });
     } else {
-        // HİÇBİR ŞEY BULUNAMAZSA: Klasördeki tüm dosyaları listele (Yedek Plan)
-        const allFiles = files.map(f => ({
-            id: `all-${f}`,
-            url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
-            lang: "Turkish",
-            label: `📂 Tüm Dosyalardan: ${f.replace('.srt', '')}`
-        }));
-        res.json({ subtitles: allFiles });
+        // HİÇBİR ŞEY TUTMAZSA: Kullanıcıyı darda bırakma, her şeyi göster
+        res.json({
+            subtitles: files.map(f => ({
+                id: `manual-${f}`,
+                url: `https://${req.get('host')}/download/${encodeURIComponent(f)}`,
+                lang: "Turkish",
+                label: `📂 Manuel Seç: ${f.replace('.srt', '')}`
+            }))
+        });
     }
 });
 
