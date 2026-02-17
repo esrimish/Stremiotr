@@ -70,7 +70,30 @@ app.get('/download/:filename', (req, res) => {
         res.status(404).send("Altyazi bulunamadi.");
     }
 });
-
+// Telefonların "Uygulama" olarak tanıması için gereken özel dosya
+app.get('/site.webmanifest', (req, res) => {
+    res.json({
+        "name": "Stremio Altyazi",
+        "short_name": "Altyazi",
+        "icons": [
+            {
+                "src": "/logo.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable"
+            },
+            {
+                "src": "/logo.png",
+                "sizes": "512x512",
+                "type": "image/png"
+            }
+        ],
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#111111",
+        "theme_color": "#111111"
+    });
+});
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
