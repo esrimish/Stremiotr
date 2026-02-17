@@ -8,63 +8,59 @@ const app = express();
 app.use(cors());
 app.use(express.static(__dirname));
 
-// --- AKILLI PUANLAMA FONKSİYONU (Anime/Film İsmi Eşleştirme) ---
+// --- AKILLI PUANLAMA FONKSİYONU ---
 function calculateMatchScore(query, fileName) {
-    if (!query || !fileName) return 0;
-    // İsimleri temizle ve kelimelere böl
-    const queryWords = query.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 2);
-    const fileWords = fileName.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/);
-
-    let matches = 0;
-    queryWords.forEach(word => {
-        if (fileWords.includes(word)) matches++;
-    });
-    return matches / queryWords.length;
+    if (!query || !fileName) return 0;
+    const queryWords = query.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 2);
+    const fileWords = fileName.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/);
+    let matches = 0;
+    queryWords.forEach(word => {
+        if (fileWords.includes(word)) matches++;
+    });
+    return queryWords.length > 0 ? matches / queryWords.length : 0;
 }
 
-// --- 1. ANA SAYFA (Logo ve Uyandırma) ---
+// --- 1. ANA SAYFA (Logo Kodları Korundu) ---
 app.get('/', (req, res) => {
-    const host = req.get('host');
-    res.send(`
-        <html>
-            <head>
-                <link rel="manifest" href="/site.webmanifest">
-                <title>Stremio Altyazi</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <link rel="apple-touch-icon" href="https://${host}/logo.png">
-                <link rel="icon" type="image/png" href="https://${host}/logo.png">
-                <meta name="theme-color" content="#111111">
-                <style>
-                    body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
-                    img { width: 120px; border-radius: 20px; margin-bottom: 20px; border: 2px solid #333; }
-                    .status { color: #00ff00; font-weight: bold; }
-                </style>
-            </head>
-            <body>
-                <img src="/logo.png" alt="Logo">
-                <h1>Altyazi Servisi <span class="status">AKTIF</span></h1>
-                <p>TV bağlantısı hazır. Sunucu uyanık.</p>
-            </body>
-        </html>
-    `);
+    const host = req.get('host');
+    res.send(`
+        <html>
+            <head>
+                <link rel="manifest" href="/site.webmanifest">
+                <title>Stremio Altyazi</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <link rel="apple-touch-icon" href="https://${host}/logo.png">
+                <link rel="icon" type="image/png" href="https://${host}/logo.png">
+                <style>
+                    body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
+                    img { width: 120px; border-radius: 20px; margin-bottom: 20px; border: 2px solid #333; }
+                    .status { color: #00ff00; font-weight: bold; }
+                </style>
+            </head>
+            <body>
+                <img src="/logo.png" alt="Logo">
+                <h1>Altyazi Servisi <span class="status">AKTIF</span></h1>
+                <p>TV bağlantısı hazır. Sunucu uyanık.</p>
+            </body>
+        </html>
+    `);
 });
 
 // --- 2. STREMIO MANIFEST ---
 app.get('/manifest.json', (req, res) => {
-    res.json({
-        id: "com.render.akillialtyazi",
-        version: "2.0.0",
-        name: "Akıllı Altyazi Servisi",
-        description: "İsimden otomatik eşleşme (Anime & Film)",
-        logo: `https://${req.get('host')}/logo.png`,
-        resources: ["subtitles"],
-        types: ["movie", "series", "anime"],
-        idPrefixes: ["tt", "kitsu", "libvlc"]
-    });
+    res.json({
+        id: "com.render.akillialtyazi",
+        version: "2.0.0",
+        name: "Akıllı Altyazi Servisi",
+        description: "İsimden otomatik eşleşme (Anime & Film)",
+        logo: `https://${req.get('host')}/logo.png`,
+        resources: ["subtitles"],
+        types: ["movie", "series", "anime"],
+        idPrefixes: ["tt", "kitsu", "libvlc"]
+    });
 });
 
-// --- 3. EVRENSEL DİZİ & FİLM EŞLEŞTİRİCİ ---
-// --- 3. EVRENSEL DİZİ & FİLM EŞLEŞTİRİCİ ---
+// --- 3. EVRENSEL EŞLEŞTİRİCİ (Axios Kullanıldı) ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const { type, id } = req.params;
     const [rawId, season, episode] = id.split(':');
@@ -73,22 +69,20 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
 
-    // 1. AXIOS İLE İSİM ALMA
     let movieName = "";
     try {
         const metaType = type === 'movie' ? 'movie' : 'series';
+        // FETCH YERİNE AXIOS
         const response = await axios.get(`https://v3-cinemeta.strem.io/meta/${metaType}/${rawId}.json`);
         if (response.data && response.data.meta) movieName = response.data.meta.name;
-    } catch (err) { }
+    } catch (err) { console.log("Meta çekilemedi."); }
 
     const entries = fs.readdirSync(subsDir, { withFileTypes: true });
     let matchedOptions = [];
-
-    // ÖNEMLİ: Numaraları fonksiyonun üzerinde tanımlıyoruz ki fonksiyon bunları görebilsin
     const s_pad = season ? season.padStart(2, '0') : "";
     const e_pad = episode ? episode.padStart(2, '0') : "";
 
-    // FONKSİYON BURADA
+    // Ekleme Fonksiyonu
     function filterAndAdd(fileList, relativePath) {
         fileList.forEach(f => {
             const fileName = f.toLowerCase();
@@ -107,7 +101,6 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
         });
     }
 
-    // 2. KLASÖR TARAMASI
     for (const entry of entries) {
         if (entry.isDirectory()) {
             const folderName = entry.name.toLowerCase();
@@ -133,37 +126,32 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     }
     res.json({ subtitles: matchedOptions });
 });
-// --- 4. ALTYAZI İNDİRME ---
-app.get('/download/:folder/:subfolder?/:file', (req, res) => {
-    const { folder, subfolder, file } = req.params;
-    const filePath = subfolder 
-        ? path.join(__dirname, 'subs', folder, subfolder, file) 
-        : path.join(__dirname, 'subs', folder, file);
-    if (fs.existsSync(filePath)) {
-        res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
-        res.download(filePath);
-    } else {
-        res.status(404).send("Altyazi bulunamadi.");
-    }
+
+// --- 4. GÜVENLİ ALTYAZI İNDİRME ---
+app.get('/download/:path*', (req, res) => {
+    const fullPath = decodeURIComponent(req.params.path + (req.params[0] || ''));
+    const filePath = path.join(__dirname, 'subs', fullPath);
+    if (fs.existsSync(filePath)) {
+        res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
+        res.download(filePath);
+    } else {
+        res.status(404).send("Dosya bulunamadı.");
+    }
 });
 
 // --- 5. WEB MANIFEST ---
 app.get('/site.webmanifest', (req, res) => {
-    res.json({
-        "name": "Stremio Altyazi",
-        "short_name": "Altyazi",
-        "icons": [
-            { "src": "/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-            { "src": "/logo.png", "sizes": "512x512", "type": "image/png" }
-        ],
-        "start_url": "/",
-        "display": "standalone",
-        "background_color": "#111111",
-        "theme_color": "#111111"
-    });
+    res.json({
+        "name": "Stremio Altyazi",
+        "short_name": "Altyazi",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#111111",
+        "theme_color": "#111111"
+    });
 });
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Sunucu ${PORT} portunda aktif.`);
 });
