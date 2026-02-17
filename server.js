@@ -38,7 +38,7 @@ app.get('/manifest.json', (req, res) => {
     res.json({
         id: "com.render.altyazi",
         version: "1.0.0",
-        name: "Render Altyazi Servisi",
+        name: "Esrimish Manual Subs",
         description: "HTTPS Destekli Altyazi",
         logo: `https://${req.get('host')}/logo.png`, // Simgeyi buradan çekecek
         resources: ["subtitles"],
