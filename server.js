@@ -14,6 +14,7 @@ app.get('/', (req, res) => {
     res.send(`
         <html>
             <head>
+                <link rel="manifest" href="/site.webmanifest">
                 <title>Stremio Altyazi</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <link rel="apple-touch-icon" href="https://${host}/logo.png">
