@@ -65,91 +65,73 @@ app.get('/manifest.json', (req, res) => {
 
 // --- 3. EVRENSEL DİZİ & FİLM EŞLEŞTİRİCİ ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
-    const { type, id } = req.params;
-    const [rawId, season, episode] = id.split(':');
-    const imdbId = rawId.replace('kitsu:', '');
-    const subsDir = path.join(__dirname, 'subs');
-    
-    if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
+    const { type, id } = req.params;
+    const [rawId, season, episode] = id.split(':');
+    const imdbId = rawId.replace('kitsu:', '');
+    const subsDir = path.join(__dirname, 'subs');
+    
+    if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
 
-    // 1. Stremio'dan ismi al
-    let movieName = "";
-    try {
-        const metaType = type === 'movie' ? 'movie' : 'series';
-        const response = await fetch(`https://v3-cinemeta.strem.io/meta/${metaType}/${rawId}.json`);
-        const data = await response.json();
-        if (data && data.meta) movieName = data.meta.name;
-    } catch (err) { }
+    // 1. AXIOS ILE ISIM ALMA
+    let movieName = "";
+    try {
+        const metaType = type === 'movie' ? 'movie' : 'series';
+        const response = await axios.get(`https://v3-cinemeta.strem.io/meta/${metaType}/${rawId}.json`);
+        if (response.data && response.data.meta) movieName = response.data.meta.name;
+    } catch (err) { }
 
-    const entries = fs.readdirSync(subsDir, { withFileTypes: true });
-    let matchedOptions = [];
+    const entries = fs.readdirSync(subsDir, { withFileTypes: true });
+    let matchedOptions = [];
+    
+    // DEGISKENLERI BURAYA ALDIK
+    const s_pad = season ? season.padStart(2, '0') : "";
+    const e_pad = episode ? episode.padStart(2, '0') : "";
+
+    // FONKSIYON ARTIK DEGISKENLERI GOREBILIR
     function filterAndAdd(fileList, relativePath) {
-        fileList.forEach(f => {
-            const fileName = f.toLowerCase();
-            
-            // BÖLÜM KONTROLÜ (Çok Katı)
-            // " 01 ", "-01", "e01", "x01" gibi kalıpları arar
-            const patterns = [`e${e_pad}`, `x${e_pad}`, `-${e_pad}`, ` ${e_pad} `, ` ${episode} `, `ep${e_pad}`, `_${e_pad}`];
-            const isCorrectEpisode = patterns.some(p => fileName.includes(p));
+        fileList.forEach(f => {
+            const fileName = f.toLowerCase();
+            const patterns = [`e${e_pad}`, `x${e_pad}`, `-${e_pad}`, ` ${e_pad} `, ` ${episode} `, `ep${e_pad}`, `_${e_pad}`];
+            const isCorrectEpisode = patterns.some(p => fileName.includes(p));
+            const hasWrongSeason = season && fileName.includes('s0') && !fileName.includes(`s${s_pad}`);
 
-            // SEZON ÇAKIŞMA KONTROLÜ
-            // Eğer dosya adında S02 yazıyorsa ama biz S01 istiyorsak alma
-            const hasWrongSeason = season && fileName.includes('s0') && !fileName.includes(`s${s_pad}`);
+            if (isCorrectEpisode && !hasWrongSeason) {
+                matchedOptions.push({
+                    id: `match-${f}-${Math.random()}`,
+                    url: `https://${req.get('host')}/download/${encodeURIComponent(relativePath + '/' + f)}`,
+                    lang: "Turkish",
+                    label: `✅ ${f.replace('.srt', '')}`
+                });
+            }
+        });
+    }
 
-            if (isCorrectEpisode && !hasWrongSeason) {
-                matchedOptions.push({
-                    id: `match-${f}`,
-                    url: `https://${req.get('host')}/download/${encodeURIComponent(relativePath + '/' + f)}`,
-                    lang: "Turkish",
-                    label: `✅ ${f.replace('.srt', '')}`
-                });
-            }
-        });
+    // 2. KLASÖR TARAMASI
+    for (const entry of entries) {
+        if (entry.isDirectory()) {
+            const folderName = entry.name.toLowerCase();
+            const folderScore = calculateMatchScore(movieName, entry.name);
 
-    // Sezon ve Bölüm formatlarını hazırla (Örn: S01, E01)
-    const s_pad = season ? season.padStart(2, '0') : "";
-    const e_pad = episode ? episode.padStart(2, '0') : "";
-    }
-    // 2. KLASÖR TARAMASI
-    for (const entry of entries) {
-        if (entry.isDirectory()) {
-            const folderName = entry.name.toLowerCase();
-            const folderScore = calculateMatchScore(movieName, entry.name);
+            if (folderScore >= 0.4 || folderName.includes(imdbId) || (movieName && folderName.includes(movieName.toLowerCase()))) {
+                const subEntries = fs.readdirSync(path.join(subsDir, entry.name), { withFileTypes: true });
+                for (const subEntry of subEntries) {
+                    const subName = subEntry.name.toLowerCase();
+                    if (subEntry.isDirectory()) {
+                        const isAnySeasonFolder = subName.includes('sezon') || subName.includes('season') || /s\d+/.test(subName);
+                        const isOurSeason = subName.includes(`sezon ${season}`) || subName.includes(`season ${season}`) || subName.includes(`s${s_pad}`);
+                        if (isAnySeasonFolder && !isOurSeason) continue;
 
-            // ANA KLASÖRÜ BUL (Haikyuu)
-            if (folderScore >= 0.4 || folderName.includes(imdbId) || (movieName && folderName.includes(movieName.toLowerCase()))) {
-                
-                const subEntries = fs.readdirSync(path.join(subsDir, entry.name), { withFileTypes: true });
-                
-                for (const subEntry of subEntries) {
-                    const subName = subEntry.name.toLowerCase();
-                    
-                    if (subEntry.isDirectory()) {
-                        // --- SEZON FİLTRESİ ---
-                        // Eğer klasör "Sezon" içeriyorsa ve bizim sezonumuz değilse PAS GEÇ
-                        const isAnySeasonFolder = subName.includes('sezon') || subName.includes('season') || subName.includes('s0') || subName.includes('s1') || subName.includes('s2');
-                        const isOurSeason = subName.includes(`sezon ${season}`) || subName.includes(`season ${season}`) || subName.includes(`s${s_pad}`);
-
-                        if (isAnySeasonFolder && !isOurSeason) continue;
-
-                        // Doğru sezon klasöründeyiz veya sezon belirtilmemiş bir klasördeyiz
-                        const srtFiles = fs.readdirSync(path.join(subsDir, entry.name, subEntry.name)).filter(f => f.endsWith('.srt'));
-                        filterAndAdd(srtFiles, path.join(entry.name, subEntry.name));
-                    } else if (subEntry.name.endsWith('.srt')) {
-                        // Ana klasörün içindeki dosyalar (Sezon klasörüne girmemişse)
-                        filterAndAdd([subEntry.name], entry.name);
-                    }
-                }
-            }
-        }
-    }
-
-    // Dosyayı sadece İSTEDİĞİMİZ BÖLÜM ise listeye ekleyen fonksiyon
-    
-
-    // 3. SONUÇ
-    res.json({ subtitles: matchedOptions });
-    });
+                        const srtFiles = fs.readdirSync(path.join(subsDir, entry.name, subEntry.name)).filter(f => f.endsWith('.srt'));
+                        filterAndAdd(srtFiles, entry.name + '/' + subEntry.name);
+                    } else if (subEntry.name.endsWith('.srt')) {
+                        filterAndAdd([subEntry.name], entry.name);
+                    }
+                }
+            }
+        }
+    }
+    res.json({ subtitles: matchedOptions });
+});
 // --- 4. ALTYAZI İNDİRME ---
 app.get('/download/:folder/:subfolder?/:file', (req, res) => {
     const { folder, subfolder, file } = req.params;
