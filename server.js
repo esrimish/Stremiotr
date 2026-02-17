@@ -64,6 +64,7 @@ app.get('/manifest.json', (req, res) => {
 });
 
 // --- 3. EVRENSEL DİZİ & FİLM EŞLEŞTİRİCİ ---
+// --- 3. EVRENSEL DİZİ & FİLM EŞLEŞTİRİCİ ---
 app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     const { type, id } = req.params;
     const [rawId, season, episode] = id.split(':');
@@ -72,7 +73,7 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
     
     if (!fs.existsSync(subsDir)) return res.json({ subtitles: [] });
 
-    // 1. AXIOS ILE ISIM ALMA
+    // 1. AXIOS İLE İSİM ALMA
     let movieName = "";
     try {
         const metaType = type === 'movie' ? 'movie' : 'series';
@@ -82,12 +83,12 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
 
     const entries = fs.readdirSync(subsDir, { withFileTypes: true });
     let matchedOptions = [];
-    
-    // DEGISKENLERI BURAYA ALDIK
+
+    // ÖNEMLİ: Numaraları fonksiyonun üzerinde tanımlıyoruz ki fonksiyon bunları görebilsin
     const s_pad = season ? season.padStart(2, '0') : "";
     const e_pad = episode ? episode.padStart(2, '0') : "";
 
-    // FONKSIYON ARTIK DEGISKENLERI GOREBILIR
+    // FONKSİYON BURADA
     function filterAndAdd(fileList, relativePath) {
         fileList.forEach(f => {
             const fileName = f.toLowerCase();
