@@ -124,38 +124,52 @@ app.get('/subtitles/:type/:id/:extra.json', async (req, res) => {
 
     function searchFiles(dir, relativePath = "") {
         const items = fs.readdirSync(dir, { withFileTypes: true });
+        
         for (const item of items) {
             const lowerName = item.name.toLowerCase();
             const cleanItemName = lowerName.replace(/[^a-z0-9]/g, ' ');
             const relPath = relativePath ? path.join(relativePath, item.name) : item.name;
             const fullPath = path.join(dir, item.name);
 
-            const pathParts = relPath.toLowerCase().split(path.sep);
-            let pathSeason = null;
-            for (const part of pathParts) {
-                const sMatch = part.match(/(?:sezon|season|s)\s*(\d+)/);
-                if (sMatch) { pathSeason = parseInt(sMatch[1]); break; }
+            // 1. ANA KRİTER: İsim eşleşmesi (The Walking Dead klasöründeyken Haikyuu gelmemeli)
+            // Eğer kök dizindeysek ve klasör ismi film/dizi adını içermiyorsa O KÖKE GİRME
+            if (item.isDirectory() && relativePath === "") {
+                const movieWords = movieName.split(/\s+/).filter(w => w.length > 2);
+                const isMainFolderMatch = movieWords.every(word => cleanItemName.includes(word));
+                if (!isMainFolderMatch) continue; // Alakasız ana klasörü atla
             }
 
-            if (type !== 'movie' && targetSeason && pathSeason !== null && pathSeason !== targetSeason) continue;
-
             if (item.isDirectory()) {
-                if (type === 'movie' && movieName) {
-                    const movieWords = movieName.split(/\s+/).filter(w => w.length > 2);
-                    const folderMatches = movieWords.every(word => cleanItemName.includes(word));
-                    if (relativePath === "" && !folderMatches && !cleanItemName.includes(rawId.replace(/\D/g, ''))) continue;
+                // Sezon kontrolü
+                const sMatch = lowerName.match(/(?:sezon|season|s)\s*(\d+)/);
+                if (sMatch && targetSeason !== null) {
+                    if (parseInt(sMatch[1]) !== targetSeason) continue; // Yanlış sezon klasörüne girme
                 }
                 searchFiles(fullPath, relPath);
             } else if (item.name.endsWith('.srt')) {
                 if (type !== 'movie') {
-                    const epPatterns = [`e${e_pad}`, `x${e_pad}`, `ep${e_pad}`, `-${e_pad}`, `_${e_pad}`, ` ${e_pad}`, ` ${episode} `];
-                    const isCorrectEp = epPatterns.some(p => lowerName.includes(p));
-                    const hasWrongS = lowerName.includes('s0') && !lowerName.includes(`s${s_pad}`);
-                    if (isCorrectEp && !hasWrongS) addSubtitle(item.name, relPath);
+                    // Dizi için Bölüm Kontrolü (SxxExx formatı için çok daha sıkı kontrol)
+                    const epPatterns = [
+                        `s${s_pad}e${e_pad}`, 
+                        `${s_pad}x${e_pad}`, 
+                        `ep${e_pad}`, 
+                        ` ${e_pad} `
+                    ];
+                    
+                    const hasCorrectEp = epPatterns.some(p => lowerName.includes(p));
+                    // Eğer dosya adında sezon varsa ve bizim sezonumuz değilse ele
+                    const sMatchFile = lowerName.match(/s(\d+)/);
+                    const isWrongSeason = sMatchFile && parseInt(sMatchFile[1]) !== targetSeason;
+
+                    if (hasCorrectEp && !isWrongSeason) {
+                        addSubtitle(item.name, relPath);
+                    }
                 } else {
+                    // Film için kelime eşleşme kontrolü
                     const movieWords = movieName.split(/\s+/).filter(w => w.length > 2);
-                    const fileMatches = movieWords.some(word => cleanItemName.includes(word));
-                    if (fileMatches || lowerName.includes(movieName.replace(/\s+/g, ''))) addSubtitle(item.name, relPath);
+                    if (movieWords.every(word => cleanItemName.includes(word))) {
+                        addSubtitle(item.name, relPath);
+                    }
                 }
             }
         }
